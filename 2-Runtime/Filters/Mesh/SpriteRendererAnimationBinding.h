@@ -1,0 +1,2 @@
+void InitializeSpriteRendererAnimationBindingInterface ();
+void CleanupSpriteRendererAnimationBindingInterface ();

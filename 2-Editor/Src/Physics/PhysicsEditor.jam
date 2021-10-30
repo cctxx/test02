@@ -1,0 +1,42 @@
+rule PhysicsEditorModule_ReportCpp
+{
+	local files = 
+		PhysicsEditor.jam
+		GizmoDrawing.h
+		GizmoDrawing.cpp
+		PhysicsEditorModuleRegistration.cpp
+	;
+
+	return Editor/Src/Physics/$(files) ;
+}
+
+rule PhysicsEditorModule_ReportTxt
+{
+	return Editor/Src/Physics/ScriptBindings/ColliderUtil.txt ;
+}
+			      
+rule PhysicsEditorModule_ReportModuleDependencies
+{
+	return Physics ;
+}
+
+rule PhysicsEditorModule_ReportModuleType
+{
+	return EDITOR ;
+}
+
+## For Coexist with old system
+rule PhysicsEditorModule_ReportIncludes
+{
+	return [ PhysicsModule_ReportIncludes ] ;
+}
+
+rule PhysicsEditorModule_Init
+{
+	OverrideModule PhysicsEditor : GetModule_Cpp : byOverridingWithMethod : PhysicsEditorModule_ReportCpp ;
+	OverrideModule PhysicsEditor : GetModule_Txt : byOverridingWithMethod : PhysicsEditorModule_ReportTxt ;
+	OverrideModule PhysicsEditor : GetModule_Deps : byOverridingWithMethod : PhysicsEditorModule_ReportModuleDependencies ;
+	OverrideModule PhysicsEditor : GetModule_Type : byOverridingWithMethod : PhysicsEditorModule_ReportModuleType ;
+}
+
+#RegisterModule PhysicsEditor ;

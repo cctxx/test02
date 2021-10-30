@@ -1,0 +1,721 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Animation/Animation.h"
+#include "Runtime/Animation/AnimationClip.h"
+#include "Runtime/Animation/AnimationManager.h"
+#include "Runtime/Animation/AnimationState.h"
+#include "Runtime/Animation/Animator.h"
+#include "Runtime/Animation/Motion.h"
+#include "Runtime/Graphics/Transform.h"
+#include "Runtime/Animation/AnimationCurveUtility.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Mono/MonoScript.h"
+#include "Runtime/Scripting/ScriptingManager.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Runtime/Scripting/Backend/ScriptingTypeRegistry.h"
+#include "Runtime/Scripting/ScriptingObjectWithIntPtrField.h"
+#include "Runtime/mecanim/human/human.h"
+#include "Runtime/mecanim/generic/crc32.h"
+#include "Runtime/Animation/AnimationUtility.h"
+#include "Runtime/Scripting/Scripting.h"
+
+using namespace Unity;
+
+CSRAW
+
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+namespace UnityEngine
+{
+
+// Determines how time is treated outside of the keyframed range of an [[AnimationClip]] or [[AnimationCurve]].
+ENUM WrapMode
+	// When time reaches the end of the animation clip, the clip will automatically stop playing and time will be reset to beginning of the clip. 
+	Once = 1,
+	
+	// When time reaches the end of the animation clip, time will continue at the beginning. 
+	Loop = 2,
+	
+	// When time reaches the end of the animation clip, time will ping pong back between beginning and end. 
+	PingPong = 4,
+	
+	// Reads the default repeat mode set higher up. 
+	Default = 0,
+
+	// Plays back the animation. When it reaches the end, it will keep playing the last frame and never stop playing. 
+	ClampForever = 8,
+	
+	//*undocumented*
+	Clamp = 1,
+END
+
+// AnimationEvent lets you call a script function similar to SendMessage as part of playing back an animation.
+CSRAW [StructLayout (LayoutKind.Sequential)]
+CLASS AnimationEvent
+	CSRAW [NotRenamed] 
+	CSRAW internal IntPtr m_Ptr;
+	CSRAW int    m_OwnsData;
+	
+	C++RAW
+
+	struct AnimationEventMono
+	{
+		AnimationEvent* m_Ptr;
+		int m_OwnsData;
+	};
+	
+	C++RAW
+ void VerifyReadOnly (ScriptingObjectWithIntPtrField<AnimationEvent>& self)
+	{
+#if ENABLE_MONO
+		if (ExtractMonoObjectData<AnimationEventMono> (self.object).m_OwnsData != 1)
+			Scripting::RaiseMonoException("AnimationEvents sent by an Animation Event callback may not modify the AnimationEvent data");
+#endif
+	}
+
+	C++RAW
+ inline AnimationEvent* GetAnimationEvent (ScriptingObjectWithIntPtrField<AnimationEvent>& self)
+	{
+		AnimationEvent* event = self.GetPtr();
+		if (!event)
+			Scripting::RaiseNullException("Animation Event is out of scope");
+
+		return event;
+	}
+	
+	// Creates a new animation event
+	CSRAW public AnimationEvent ()
+	{
+		m_OwnsData = 1;
+		Create();
+	}
+
+	THREAD_SAFE
+	CUSTOM private void Create ()
+	{
+		self.SetPtr(new AnimationEvent());
+	}
+	
+	CSRAW ~AnimationEvent ()
+	{
+		if (m_OwnsData != 0)
+			Destroy();
+	}
+	
+	THREAD_SAFE
+	CUSTOM private void Destroy ()
+	{
+		delete self.GetPtr();
+	}
+	
+	OBSOLETE warning Use stringParameter instead
+	CUSTOM_PROP string data { return scripting_string_new(GetAnimationEvent(self)->stringParameter); }   { VerifyReadOnly(self); GetAnimationEvent(self)->stringParameter = value.AsUTF8(); }
+
+	// String parameter that is stored in the event and will be sent to the function.
+	CUSTOM_PROP string stringParameter { return scripting_string_new(GetAnimationEvent(self)->stringParameter); }   { VerifyReadOnly(self); GetAnimationEvent(self)->stringParameter = value.AsUTF8(); }
+	
+	// Float parameter that is stored in the event and will be sent to the function.
+	CUSTOM_PROP float floatParameter { return GetAnimationEvent(self)->floatParameter; }   { VerifyReadOnly(self); GetAnimationEvent(self)->floatParameter = value; }
+
+	// int parameter that is stored in the event and will be sent to the function.
+	CUSTOM_PROP int intParameter { return GetAnimationEvent(self)->intParameter; }   { VerifyReadOnly(self); GetAnimationEvent(self)->intParameter = value; }
+	
+	// Object reference parameter that is stored in the event and will be sent to the function.
+	CUSTOM_PROP Object objectReferenceParameter { return Scripting::ScriptingWrapperFor(GetAnimationEvent(self)->objectReferenceParameter); }   { VerifyReadOnly(self); GetAnimationEvent(self)->objectReferenceParameter = (Object*)value; }
+
+	// The name of the function that will be called.
+	CUSTOM_PROP string functionName { return scripting_string_new(GetAnimationEvent(self)->functionName); }  { VerifyReadOnly(self);GetAnimationEvent(self)->functionName = value.AsUTF8(); }
+
+	// The time at which the event will be fired off.
+	CUSTOM_PROP float time { return GetAnimationEvent(self)->time; } { VerifyReadOnly(self); GetAnimationEvent(self)->time = value; }
+
+	// Function call options.
+	CUSTOM_PROP SendMessageOptions messageOptions { return GetAnimationEvent(self)->messageOptions; } { VerifyReadOnly(self); GetAnimationEvent(self)->messageOptions = value; }
+
+	// The animation state that fired this event (RO).
+	CUSTOM_PROP AnimationState animationState
+	{
+		return TrackedReferenceBaseToScriptingObject(GetAnimationEvent(self)->stateSender, animationState);
+	}
+	
+END
+
+// Stores keyframe based animations.
+CLASS AnimationClip : Motion
+
+	// Creates a new animation clip
+	CSRAW public AnimationClip()
+	{
+		Internal_CreateAnimationClip(this);
+	}
+	
+	CUSTOM private static void Internal_CreateAnimationClip ([Writable]AnimationClip self)
+	{
+		Object* animClip = NEW_OBJECT(AnimationClip);
+		animClip->Reset();
+		Scripting::ConnectScriptingWrapperToObject (self.GetScriptingObject(), animClip);
+		animClip->AwakeFromLoad(kInstantiateOrCreateFromCodeAwakeFromLoad);
+	}
+	
+	// Animation length in seconds (RO)
+	CUSTOM_PROP float length { return self->GetRange ().second; }
+
+	
+	CUSTOM_PROP internal float startTime { return self->GetRange ().first; }
+	CUSTOM_PROP internal float stopTime { return self->GetRange ().second; }
+	
+
+	// Frame rate at which keyframes are sampled (RO)
+	AUTO_PROP float frameRate GetSampleRate SetSampleRate
+	
+	
+	// Assigns the curve to animate a specific property.
+	CUSTOM void SetCurve (string relativePath, Type type, string propertyName, AnimationCurve curve)
+	{
+#if ENABLE_MONO
+		Scripting::RaiseIfNull(type);
+		MonoClass* klass = GetScriptingTypeRegistry().GetType(type);
+		MonoScript* script = NULL;
+		int classID = Scripting::GetClassIDFromScriptingClass(klass);
+		if (classID == ClassID(MonoBehaviour))
+		{
+			script = GetMonoScriptManager().FindRuntimeScript(klass);
+			if (script == NULL)
+			{
+				ErrorString("The script class couldn't be found");
+				return;
+			}
+		}	
+
+		self->SetCurve(relativePath, classID, script, propertyName, curve.GetPtr(), true);
+#endif
+	}
+
+	//*undocumented*
+	AUTO void EnsureQuaternionContinuity();
+	
+	// Clears all curves from the clip.
+	AUTO void ClearCurves();
+
+	// Sets the default wrap mode used in the animation state.
+	AUTO_PROP WrapMode wrapMode GetWrapMode SetWrapMode
+	
+	// Adds an animation event to the clip.
+	CUSTOM void AddEvent (AnimationEvent evt)
+	{
+		Scripting::RaiseIfNull(evt.GetPtr());
+		self->AddRuntimeEvent(*GetAnimationEvent(evt));
+	}
+	
+	// AABB of this Animation Clip in local space of Animation component that it is attached too.
+	AUTO_PROP Bounds localBounds GetBounds SetBounds	
+
+END
+
+// A single keyframe that can be injected into an animation curve.
+STRUCT Keyframe
+	CSRAW float m_Time;
+	CSRAW float m_Value;
+	CSRAW float m_InTangent;
+	CSRAW float m_OutTangent;
+	 
+	CSRAW
+	#if UNITY_EDITOR
+	int m_TangentMode;
+	#endif
+	
+	// Create a keyframe.
+	CSRAW public Keyframe (float time, float value)
+	{
+		m_Time = time;
+		m_Value = value;
+		m_InTangent = 0;
+		m_OutTangent = 0;
+		#if UNITY_EDITOR
+		m_TangentMode = 0;
+		#endif
+	}
+	
+	// Create a keyframe.
+	CSRAW public Keyframe (float time, float value, float inTangent, float outTangent)
+	{
+		m_Time = time;
+		m_Value = value;
+		m_InTangent = inTangent;
+		m_OutTangent = outTangent;
+		#if UNITY_EDITOR
+		m_TangentMode = 0;
+		#endif
+	}
+	
+	// The time of the keyframe.
+	CSRAW public float time { get { return m_Time; } set { m_Time = value; }  }
+
+	// The value of the curve at keyframe.
+	CSRAW public float value { get { return m_Value; } set { m_Value = value; }  }
+
+	// Describes the tangent when approaching this point from the previous point in the curve.
+	CSRAW public float inTangent { get { return m_InTangent; } set { m_InTangent = value; }  }
+
+	// Describes the tangent when leaving this point towards the next point in the curve.
+	CSRAW public float outTangent { get { return m_OutTangent; } set { m_OutTangent = value; }  }
+	
+	// The tangent mode of the keyframe.
+	// This is used only in the editor and will always return 0 in the player.
+	CSRAW public int tangentMode
+	{
+		get {
+			#if UNITY_EDITOR
+			return m_TangentMode;
+			#else
+			return 0;
+			#endif
+		}
+		set {
+			#if UNITY_EDITOR
+			m_TangentMode = value;
+			#endif
+		}
+	}	
+		
+END
+
+CSRAW #pragma warning disable 414
+
+// An animation curve. Lets you add keyframes and evaluate the curve at a given time. 
+C++RAW
+ static void CleanupAnimationCurve(void* animationCurve){ delete ((AnimationCurve*)animationCurve); };
+// A collection of curves form an [[AnimationClip]].
+CSRAW  [StructLayout (LayoutKind.Sequential)]
+THREAD_SAFE
+CLASS AnimationCurve
+	CSRAW
+	internal IntPtr m_Ptr;
+	
+	THREAD_SAFE
+	CUSTOM private void Cleanup () { CleanupAnimationCurve(self.GetPtr()); }
+
+	CSRAW 
+	~AnimationCurve()
+	{
+		Cleanup ();
+	}
+	
+	// Evaluate the curve at /time/.
+	CUSTOM float Evaluate (float time)
+	{
+		return self->Evaluate(time);
+	}
+
+	//	All keys defined in the animation curve.
+	CSRAW public Keyframe[]  keys { get { return GetKeys(); } set { SetKeys(value); } }
+
+	// Add a new key to the curve.
+	CUSTOM int AddKey (float time, float value) { return AddKeySmoothTangents(*self, time, value); }
+
+	// Add a new key to the curve.
+	CSRAW public int AddKey (Keyframe key) { return AddKey_Internal(key); }
+
+	CUSTOM private int AddKey_Internal (Keyframe key) { return self->AddKey (key); }
+
+	// Removes the keyframe at /index/ and inserts key.
+	CUSTOM int MoveKey (int index, Keyframe key)
+	{
+		if (index >= 0 && index < self->GetKeyCount())
+			return MoveCurveKey(*self, index, key);
+		else {
+			Scripting::RaiseOutOfRangeException("");
+			return 0;
+		}
+	}
+	
+	// Removes a key
+	CUSTOM void RemoveKey (int index)
+	{
+		if (index >= 0 && index < self->GetKeyCount())
+			self->RemoveKeys(self->begin() + index, self->begin() + index + 1);
+		else
+			Scripting::RaiseOutOfRangeException("");
+	}
+
+	// Retrieves the key at index (RO)
+	CSRAW public Keyframe this [int index]
+	{
+		get { return GetKey_Internal(index); }
+	}
+
+	// The number of keys in the curve (RO)
+	CUSTOM_PROP int length { return self->GetKeyCount(); }
+	
+	// Replace all keyframes with the /keys/ array.
+	CUSTOM private void SetKeys (Keyframe[] keys)
+	{
+		KeyframeTpl<float>* first = Scripting::GetScriptingArrayStart<KeyframeTpl<float> > (keys);
+		self->Assign(first, first + GetScriptingArraySize(keys));
+		self->Sort();
+	}
+
+	CUSTOM private Keyframe GetKey_Internal (int index)
+	{
+		if (index >= 0 && index < self->GetKeyCount())
+		{
+			return self->GetKey(index);
+		}
+		else
+		{
+			Scripting::RaiseOutOfRangeException("");
+			return KeyframeTpl<float>();
+		}
+	}	
+	
+	CUSTOM private Keyframe[] GetKeys ()
+	{
+		if (self->GetKeyCount() <= 0)
+			return CreateEmptyStructArray(MONO_COMMON.keyframe);
+		return CreateScriptingArray(&self->GetKey(0), self->GetKeyCount(), MONO_COMMON.keyframe);
+	}	
+
+	// Smooth the in and out tangents of the keyframe at /index/.
+	CUSTOM void SmoothTangents (int index, float weight)
+	{
+		if (index >= 0 && index < self->GetKeyCount())
+			RecalculateSplineSlope(*self, index, weight);
+		else
+			Scripting::RaiseOutOfRangeException("");
+	}
+	
+	// A straight Line starting at /timeStart/, /valueStart/ and ending at /timeEnd/, /valueEnd/
+	CSRAW public static AnimationCurve Linear (float timeStart, float valueStart, float timeEnd, float valueEnd)
+	{
+		float tangent = (valueEnd - valueStart) / (timeEnd - timeStart);
+		Keyframe[] keys = { new Keyframe(timeStart, valueStart, 0.0F, tangent), new Keyframe(timeEnd, valueEnd, tangent, 0.0F) };
+		return new AnimationCurve(keys);
+	}
+
+	// An ease-in and out curve starting at /timeStart/, /valueStart/ and ending at /timeEnd/, /valueEnd/.
+	CSRAW public static AnimationCurve EaseInOut (float timeStart, float valueStart, float timeEnd, float valueEnd)
+	{
+		Keyframe[] keys = { new Keyframe(timeStart, valueStart, 0.0F, 0.0F), new Keyframe(timeEnd, valueEnd, 0.0F, 0.0F) };
+		return new AnimationCurve(keys);
+	}
+
+	// The behaviour of the animation before the first keyframe
+	CUSTOM_PROP WrapMode preWrapMode { return self->GetPreInfinity(); } { self->SetPreInfinity(value); }
+	// The behaviour of the animation after the last keyframe
+	CUSTOM_PROP WrapMode postWrapMode { return self->GetPostInfinity();  }  { self->SetPostInfinity(value); }
+
+	// Creates an animation curve from arbitrary number of keyframes.
+	CSRAW public AnimationCurve (params Keyframe[] keys) { Init(keys); }
+	
+	CONDITIONAL UNITY_FLASH || UNITY_WINRT
+	// *undocumented*
+	CSRAW public AnimationCurve(IntPtr nativeptr) { m_Ptr = nativeptr; }
+	
+	// Creates an empty animation curve
+	CSRAW public AnimationCurve ()  { Init(null); }
+	
+	THREAD_SAFE
+	CUSTOM private void Init (Keyframe[] keys)
+	{
+		self.SetPtr(new AnimationCurve(), CleanupAnimationCurve);
+		#if UNITY_WINRT
+		if (keys != SCRIPTING_NULL) AnimationCurve_CUSTOM_SetKeys(self.object, keys); 
+		#else
+		if (keys != SCRIPTING_NULL) AnimationCurve_CUSTOM_SetKeys(self, keys); 
+		#endif
+	}
+
+END
+
+CSRAW #pragma warning restore 414
+
+
+// Used by Animation.Play function.
+ENUM PlayMode
+	// Will stop all animations that were started in the same layer. This is the default when playing animations.
+	StopSameLayer = 0,
+	// Will stop all animations that were started with this component before playing
+	StopAll = 4,
+END
+
+// Used by Animation.Play function.
+ENUM QueueMode
+	// Will start playing after all other animations have stopped playing
+	CompleteOthers = 0,
+
+	// Starts playing immediately. This can be used if you just want to quickly create a duplicate animation.
+	PlayNow = 2
+END
+
+// Used by Animation.Play function.
+ENUM AnimationBlendMode
+	// Animations will be blended
+	Blend = 0,
+	// Animations will be added
+	Additive = 1
+END
+
+
+//*undocumented* - deprecated
+CSRAW public enum AnimationPlayMode { Stop = 0, Queue = 1, Mix = 2 }
+
+// This enum controlls culling of Animation component. 
+ENUM AnimationCullingType
+	// Animation culling is disabled - object is animated even when offscreen.
+	AlwaysAnimate = 0,
+	
+	// Animation is disabled when renderers are not visible.
+	BasedOnRenderers = 1,
+	
+	// Animation is disabled when Animation::ref::localBounds are not visible.
+	BasedOnClipBounds = 2,
+	
+	// Animation is disabled when Animation::ref::localBounds are not visible.
+	BasedOnUserBounds = 3
+END
+
+// The animation component is used to play back animations.
+CLASS Animation : Behaviour, IEnumerable
+	// The default animation.
+	AUTO_PTR_PROP AnimationClip clip GetClip SetClip
+	
+	// Should the default animation clip (Animation.clip) automatically start playing on startup.
+	AUTO_PROP bool playAutomatically GetPlayAutomatically SetPlayAutomatically
+
+	// How should time beyond the playback range of the clip be treated?
+	AUTO_PROP WrapMode wrapMode GetWrapMode SetWrapMode
+	
+	// Stops all playing animations that were started with this Animation.
+	AUTO void Stop ();
+	
+	// Stops an animation named /name/.
+	CSRAW public void Stop (string name) { Internal_StopByName(name); }
+	CUSTOM private void Internal_StopByName (string name) { return self->Stop (name); }
+
+	// Rewinds the animation named /name/.
+	CSRAW public void Rewind (string name) {  Internal_RewindByName(name); }
+	CUSTOM private void Internal_RewindByName (string name) { self->Rewind(name); }
+
+	// Rewinds all animations
+	AUTO void Rewind ();
+
+	// Samples animations at the current state.
+	AUTO void Sample ();
+
+	// Are we playing any animations?
+	AUTO_PROP bool isPlaying IsPlaying
+
+	// Is the animation named /name/ playing?
+	CUSTOM bool IsPlaying (string name) { return self->IsPlaying (name); }
+	
+	
+	// Returns the animation state named /name/.
+	CSRAW public AnimationState this [string name]
+	{
+		get { return GetState(name); }
+	}
+	
+	/// *listonly*
+	CSRAW public bool Play (PlayMode mode = PlayMode.StopSameLayer) { return PlayDefaultAnimation (mode); }
+	
+	// Plays animation without any blending.
+	CUSTOM bool Play (string animation, PlayMode mode = PlayMode.StopSameLayer) { return self->Play(animation, mode); }
+
+	// Fades the animation with name /animation/ in over a period of /time/ seconds and fades other animations out.
+	CUSTOM void CrossFade (string animation, float fadeLength = 0.3F, PlayMode mode = PlayMode.StopSameLayer) { self->CrossFade(animation, fadeLength, mode); }
+
+	// Blends the animation named /animation/ towards /targetWeight/ over the next /time/ seconds.
+	CUSTOM void Blend (string animation, float targetWeight = 1.0F, float fadeLength = 0.3F) { self->Blend(animation, targetWeight, fadeLength); }
+	
+
+	// Cross fades an animation after previous animations has finished playing.
+	CUSTOM AnimationState CrossFadeQueued (string animation, float fadeLength = 0.3F, QueueMode queue = QueueMode.CompleteOthers, PlayMode mode = PlayMode.StopSameLayer)
+	{ 
+		AnimationState* as = self->QueueCrossFade(animation, fadeLength, queue, mode);
+		return TrackedReferenceBaseToScriptingObject(as,animationState); 
+	}	
+
+
+	// Plays an animation after previous animations has finished playing.
+	CUSTOM AnimationState PlayQueued (string animation, QueueMode queue = QueueMode.CompleteOthers, PlayMode mode = PlayMode.StopSameLayer) 
+	{ 
+		AnimationState* as = self->QueuePlay(animation, queue, mode);
+		return TrackedReferenceBaseToScriptingObject(as, animationState); 
+	}	
+
+
+	// Adds a /clip/ to the animation with name /newName/.
+	CSRAW public void AddClip (AnimationClip clip, string newName) { AddClip (clip, newName, Int32.MinValue, Int32.MaxValue); }
+
+	// Adds /clip/ to the only play between /firstFrame/ and /lastFrame/. The new clip will also be added to the animation with name /newName/.
+	CUSTOM void AddClip (AnimationClip clip, string newName, int firstFrame, int lastFrame, bool addLoopFrame = false) { self->AddClip(*clip, newName, firstFrame, lastFrame, addLoopFrame); }
+
+	// Remove clip from the animation list.
+	CUSTOM void RemoveClip (AnimationClip clip) { self->RemoveClip (*clip); }
+
+	// Remove clip from the animation list.
+	CSRAW public void RemoveClip (string clipName) { RemoveClip2(clipName); }
+
+	// Get the number of clips currently assigned to this animation
+	CUSTOM int GetClipCount () { return self->GetClipCount(); }
+
+	CUSTOM private void RemoveClip2 (string clipName) { self->RemoveClip (clipName); }
+
+	CUSTOM private bool PlayDefaultAnimation (PlayMode mode) { return self->Play(mode); }
+	
+	//*undocumented* deprecated
+	OBSOLETE warning use PlayMode instead of AnimationPlayMode.
+	CSRAW public bool Play (AnimationPlayMode mode) { return PlayDefaultAnimation((PlayMode)mode); }
+	//*undocumented* deprecated
+	OBSOLETE warning use PlayMode instead of AnimationPlayMode.
+	CSRAW public bool Play (string animation, AnimationPlayMode mode) { return Play(animation, (PlayMode)mode); }
+	
+	
+	// Synchronizes playback speed of all animations in the /layer/.
+	AUTO void SyncLayer(int layer);
+	
+	//*undocumented* Documented separately
+	CSRAW public IEnumerator GetEnumerator ()
+	{
+		return new Animation.Enumerator (this);
+	}
+	//*undocumented*
+	CLASS private Enumerator : IEnumerator
+		CSRAW
+		private Animation m_Outer;
+		private int       m_CurrentIndex = -1;
+
+		internal Enumerator (Animation outer) { m_Outer = outer; }
+		//*undocumented*
+		public object Current
+		{
+			get { return m_Outer.GetStateAtIndex (m_CurrentIndex); }
+		}
+		
+		//*undocumented*
+		public bool MoveNext ()
+		{
+			int childCount = m_Outer.GetStateCount();
+			m_CurrentIndex++;
+			return m_CurrentIndex < childCount;
+		}
+
+		//*undocumented*
+		public void Reset () { m_CurrentIndex = -1; }
+	END
+	
+	CUSTOM internal AnimationState GetState(string name)
+	{
+		AnimationState* state = self->GetState(name);
+		return TrackedReferenceBaseToScriptingObject(state, animationState);
+	}
+	
+	CUSTOM internal AnimationState GetStateAtIndex (int index) 
+	{
+
+		Animation& selfRef = *self;
+		if (index >= 0 || index < selfRef.GetAnimationStateCount())	
+		{
+			return TrackedReferenceBaseToScriptingObject(&selfRef.GetAnimationStateAtIndex (index), animationState);
+		}
+		Scripting::RaiseMonoException("Animation State out of bounds!");
+		return SCRIPTING_NULL;
+	}
+	
+	CUSTOM internal int GetStateCount () { return self->GetAnimationStateCount(); }
+	
+	OBSOLETE planned Returns the animation clip named /name/.
+	CSRAW public AnimationClip GetClip (string name) {
+		AnimationState state = GetState(name);
+		if (state)
+			return state.clip;
+		else
+			return null;
+	}
+
+
+	// When turned on, animations will be executed in the physics loop. This is only useful in conjunction with kinematic rigidbodies.
+	AUTO_PROP bool animatePhysics GetAnimatePhysics SetAnimatePhysics
+
+	// When turned on, Unity might stop animating if it thinks that the results of the animation won't be visible to the user.
+	OBSOLETE warning Use cullingType instead
+	CUSTOM_PROP bool animateOnlyIfVisible 
+	{ 
+		Animation::CullingType type = self->GetCullingType();
+		AssertMsg(type == Animation::kCulling_AlwaysAnimate || type == Animation::kCulling_BasedOnRenderers,
+			"Culling type %d cannot be converted to animateOnlyIfVisible. animateOnlyIfVisible is obsolete, please use cullingType instead.", type);
+		return type == Animation::kCulling_BasedOnRenderers; 
+	}   
+	{	
+		self->SetCullingType(value ? Animation::kCulling_BasedOnRenderers : Animation::kCulling_AlwaysAnimate);
+	}
+	
+	// Controls culling of this Animation component. 
+	AUTO_PROP AnimationCullingType cullingType GetCullingType SetCullingType
+	
+	// AABB of this Animation animation component in local space.
+	AUTO_PROP Bounds localBounds GetLocalAABB SetLocalAABB
+	
+END
+
+// The AnimationState gives full control over animation blending.
+CLASS AnimationState : TrackedReference
+
+	// Enables / disables the animation.
+	
+	AUTO_PROP bool enabled GetEnabled SetEnabled
+
+	// The weight of animation
+	AUTO_PROP float weight GetWeight SetWeight
+
+	// Wrapping mode of the animation.
+	AUTO_PROP WrapMode wrapMode GetWrapMode SetWrapMode
+
+	// The current time of the animation
+	AUTO_PROP float time GetTime SetTime
+
+	// The normalized time of the animation.
+	AUTO_PROP float normalizedTime GetNormalizedTime SetNormalizedTime
+
+	// The playback speed of the animation. 1 is normal playback speed.
+	AUTO_PROP float speed GetSpeed SetSpeed
+
+	// The normalized playback speed.
+	AUTO_PROP float normalizedSpeed GetNormalizedSpeed SetNormalizedSpeed
+
+	// The length of the animation clip in seconds.
+	AUTO_PROP float length GetLength
+
+	// The layer of the animation. When calculating the final blend weights, animations in higher layers will get their weights
+	AUTO_PROP int layer GetLayer SetLayer
+
+	// The clip that is being played by this animation state.
+	AUTO_PTR_PROP AnimationClip clip GetClip
+
+	// Adds a transform which should be animated. This allows you to reduce the number of animations you have to create.
+	CUSTOM void AddMixingTransform (Transform mix, bool recursive = true) { self->AddMixingTransform(*mix, recursive); }
+	
+	// Removes a transform which should be animated. 
+	CUSTOM void RemoveMixingTransform (Transform mix) { self->RemoveMixingTransform(*mix); }
+
+	// The name of the animation	
+	CUSTOM_PROP string name { return scripting_string_new(self->GetName()); } { self->SetName(value.AsUTF8()); }
+	
+	// Which blend mode should be used?
+	AUTO_PROP AnimationBlendMode blendMode GetBlendMode SetBlendMode
+END
+
+CLASS GameObject : Object
+
+	// Samples an animation at a given time for any animated properties.
+	CUSTOM void SampleAnimation (AnimationClip animation, float time) { SampleAnimation (*self, *animation, time, animation->GetWrapMode()); }
+
+END
+
+
+CSRAW }

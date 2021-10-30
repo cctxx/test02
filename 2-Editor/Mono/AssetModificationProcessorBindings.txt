@@ -1,0 +1,30 @@
+
+OBSOLETE warning Use UnityEditor.AssetModificationProcessor
+NONSEALED_CLASS AssetModificationProcessor
+END
+
+CSRAW
+namespace UnityEditor
+{
+
+// AssetModificationProcessor lets you hook into saving of serialized assets and scenes which are edited inside Unity.
+NONSEALED_CLASS AssetModificationProcessor
+
+// This is called by Unity when it is about to create an asset not imported by the user, eg. ".meta" files
+CSNONE static void OnWillCreateAsset (string path);
+
+// This is called by Unity when it is about to write serialized assets or scene files to disk.
+CSNONE static string[] OnWillSaveAssets (string[] paths);
+
+// This is called by Unity when it is about to move an asset on disk.
+CSNONE AssetMoveResult OnWillMoveAsset(string oldPath, string newPath);
+
+// This is called by Unity when it is about to delete an asset from disk.
+CSNONE AssetDeleteResult OnWillDeleteAsset(string assetPath, RemoveAssetOptions option);
+
+// This is called by Unity when inspecting an asset to determine if an editor should be disabled.
+CSNONE bool IsOpenForEdit(string assetPath, out string message);
+
+END
+
+CSRAW }

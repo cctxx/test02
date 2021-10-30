@@ -1,0 +1,416 @@
+CSRAW
+using UnityEngine;
+using UnityEditor;
+using UnityEditorInternal;
+
+namespace UnityEditor {
+
+// Enum for Tools.viewTool
+ENUM ViewTool
+	// View tool is not selected.
+	None = -1, 
+	// The orbit tool is selected.
+	Orbit = 0, 
+	// The pan tool is selected.
+	Pan = 1, 
+	// The zoom tool is selected.
+	Zoom = 2, 
+	// The FPS tool is selected.
+	FPS = 3 
+END
+	
+// Where is the tool handle placed
+ENUM PivotMode
+	// The tool handle is at the graphical center of the selection.
+	Center = 0,
+	// The tool handle is on the pivot point of the active object.
+	Pivot = 1
+END
+
+// How is the tool handle oriented
+ENUM PivotRotation 
+	// The tool handle is oriented from the active object.
+	Local = 0,
+	// The tool handle is aligned along the global axes.
+	Global = 1
+END
+
+// Which tool is active in the editor
+ENUM Tool
+	// The view tool is active - Use Tools::ref::viewTool to find out which view tool we're talking about.
+	View = 0,
+	// The move tool is active.
+	Move = 1,
+	// The rotate tool is active.
+	Rotate = 2,
+	// The scale tool is active.
+	Scale = 3,
+	//  No tool is active. Set Tools.current to this to implement your own in-inspector toolbar (like the terrain editor does).
+	None = -1
+END
+
+// Class used to manipulate the tools used in Unity's Scene View.
+// @TODO: Find a way to hide all inherited functions etc. from ScriptableObject in the docs.
+// or split Tools into Tools and ToolsInternal where only Tools is public and doesn't inherit from anything.
+CLASS Tools : ScriptableObject
+
+	// Global getter for the singleton tool object
+	CSRAW private static Tools get { 
+		get { 
+			if (!s_Get) { 
+				s_Get = ScriptableObject.CreateInstance<Tools>();
+				s_Get.hideFlags = HideFlags.HideAndDontSave;
+			} 
+			return s_Get; 
+		} 
+	}
+	private static Tools s_Get;
+	
+	// Lock the selection bar to a given tool type
+	static internal Tool s_LockedTool = Tool.None;
+
+	CSRAW public static Tool current
+	{
+		get { return s_LockedTool == Tool.None ? get.currentTool : s_LockedTool; }
+		set	{
+			if (get.currentTool != value)
+			{	
+				get.currentTool = value;
+				Tools.RepaintAllToolViews ();
+			}
+		}
+	}
+
+	// Which view tool is active in the scene view
+	CSRAW public static ViewTool viewTool { 
+		get { 
+			Event evt = Event.current;
+			if (viewToolActive) {
+				if (s_LockedViewTool == ViewTool.None) {
+					bool controlKeyOnMac = (evt.control && Application.platform == RuntimePlatform.OSXEditor);
+					bool actionKey = EditorGUI.actionKey;
+					bool noModifiers = (!actionKey && !controlKeyOnMac && !evt.alt);
+					
+					// Test for left drag using s_ButtonDown <= 0
+					// This will also be true when no mouse button is down (s_ButtonDown is -1).
+					// We want that so the preview will correctly show what will happen on a left drag.
+					
+					// Current logic is settled using following logic:
+					// 
+					// - With a proper mouse you can always (hand tool or not):
+					//    - Orbit with alt + left-drag
+					//    - Move with alt + middle-drag
+					//    - Zoom with alt + right-drag
+					//    - FPS mode with right-drag
+					// 
+					// - On a Mac with no right and middle mouse buttons you can always (hand tool or not):
+					//    - Orbit with alt + left-drag
+					//    - Move with alt + command(action) + left-drag
+					//    - Zoom with alt + control + left-drag
+					//    - (FPS is not possible)
+					// 
+					// - On a PC with no middle mouse button (like a laptop) you always (hand tool or not):
+					//    - Orbit with alt + left-drag
+					//    - Move with alt + control(action) + left-drag
+					//    - Zoom with alt + right-drag
+					//    - FPS mode with right drag
+					// 
+					// - When using the hand tool, left-drag moves when no modifier keys are held down.
+					// 
+					// - Combos with alt + some other modifier key also work without pressing alt when using the hand tool.
+					
+					// Move
+					if ((s_ButtonDown <= 0 && noModifiers) // Move on plain left-drag. Only for hand tool.
+						|| (s_ButtonDown <= 0 && actionKey) // Move on left-drag + action key. Works for hand tool and/or when holding alt.
+						|| s_ButtonDown == 2 // Move on any middle drag. Works for any tool.
+				#if ENABLE_SPRITES
+						|| SceneView.lastActiveSceneView != null && SceneView.lastActiveSceneView.in2DMode && !(s_ButtonDown == 1 && evt.alt || s_ButtonDown <= 0 && controlKeyOnMac)
+				#endif
+						) 
+					{
+						get.m_ViewTool = ViewTool.Pan;
+					}
+					// Zoom
+					else if ((s_ButtonDown <= 0 && controlKeyOnMac) // Zoom on left-drag + control on OS X. Works for hand tool and/or when pressing alt.
+						|| (s_ButtonDown == 1 && evt.alt)) // Zoom on right-drag + alt. Works for any tool.
+					{
+						get.m_ViewTool = ViewTool.Zoom;
+					}
+					// Orbit
+					else if (s_ButtonDown <= 0 && evt.alt) // Orbit on left-drag + alt. Works for any tool.
+					{
+						get.m_ViewTool = ViewTool.Orbit;
+					}
+					// FPS controls
+					else if (s_ButtonDown == 1 && !evt.alt) // FPS controls on right-drag (not alt). Works for any tool.
+					{
+						get.m_ViewTool = ViewTool.FPS;
+					}
+				}
+			}
+			else {
+				get.m_ViewTool = ViewTool.Pan;
+			}
+			return get.m_ViewTool;
+		} 
+		set { get.m_ViewTool = value; } 
+	}
+	internal static ViewTool s_LockedViewTool = ViewTool.None;
+	internal static int s_ButtonDown = -1;
+	internal static bool viewToolActive { get {
+		// If something has hotControl and it isn't the viewTool, then the viewTool shouldn't switch to active
+		if (GUIUtility.hotControl != 0 && s_LockedViewTool == ViewTool.None)
+			return false;
+
+		// Make viewTool active if it's locked, if alt is held down, or if the middle or right mouse button is held down
+		return s_LockedViewTool != ViewTool.None || (current == 0) || Event.current.alt || (s_ButtonDown == 1) || (s_ButtonDown == 2);
+	} }
+
+
+	// The position of the tool handle in world space.
+	CSRAW public static Vector3 handlePosition {
+		get {
+			Transform t = Selection.activeTransform;
+			if (!t)
+				return new Vector3 (Mathf.Infinity, Mathf.Infinity, Mathf.Infinity);
+	
+			if (s_LockHandlePositionActive)
+				return s_LockHandlePosition + handleOffset;
+	
+			switch (get.m_PivotMode) {
+			case PivotMode.Center:
+					return InternalEditorUtility.CalculateSelectionBounds(true).center + handleOffset;
+			case PivotMode.Pivot:
+				return t.position + handleOffset;
+			default:
+				return new Vector3 (Mathf.Infinity, Mathf.Infinity, Mathf.Infinity);
+			}
+		} 
+	}
+	
+	// Are we in Center or Pivot mode.
+	CSRAW public static PivotMode pivotMode
+	{
+		get { return get.m_PivotMode; }
+		set
+		{
+			if (get.m_PivotMode != value)
+			{
+				get.m_PivotMode = value;
+				EditorPrefs.SetInt("PivotMode", (int)pivotMode);
+			}
+		}
+	}
+	
+	// Called from C++
+	CSRAW internal static int GetPivotMode () 
+	{ 
+		return (int)pivotMode; 
+	}
+		
+	// The rotation of the tool handle in world space.	
+	CSRAW public static Quaternion handleRotation { 
+		get {
+			switch (get.m_PivotRotation) {
+			case PivotRotation.Global:
+				return get.m_GlobalHandleRotation;
+			case PivotRotation.Local:
+				return handleLocalRotation;
+			}
+			return Quaternion.identity;
+		} 
+		set {
+			if (get.m_PivotRotation == PivotRotation.Global)
+				get.m_GlobalHandleRotation = value;
+		}
+	}
+		
+	PivotMode m_PivotMode;
+	// What's the rotation of the tool handle.
+	CSRAW public static PivotRotation pivotRotation
+	{
+		get { return get.m_PivotRotation; }
+		set
+		{
+			if(get.m_PivotRotation != value)
+			{
+				get.m_PivotRotation = value;
+				EditorPrefs.SetInt("PivotRotation", (int)pivotRotation);
+			}
+		}
+	}
+	private PivotRotation m_PivotRotation;
+
+	// Are the default tools enabled?
+	// Turn this off if you want to implement your own handles for the built-in Move, Rotate and Scale tools.
+	internal static bool s_Hidden = false;
+
+	// Are we vertex dragging
+	internal static bool vertexDragging;
+
+	// Lock the handle position for rotation tool
+	static Vector3 s_LockHandlePosition;
+	// Is the position locked
+	static bool s_LockHandlePositionActive = false;
+
+	// Which layers are visible in the scene view.
+	CSRAW public static int visibleLayers
+	{
+		get { return get.m_VisibleLayers; }
+		set
+		{
+			if (get.m_VisibleLayers != value)
+			{
+				get.m_VisibleLayers = value;
+				EditorGUIUtility.SetVisibleLayers(value);
+				EditorPrefs.SetInt("VisibleLayers", visibleLayers);
+			}
+		}
+	}
+	int m_VisibleLayers = -1;
+
+	CSRAW public static int lockedLayers
+	{
+		get { return get.m_LockedLayers; }
+		set
+		{
+			if (get.m_LockedLayers != value)
+			{
+				get.m_LockedLayers = value;
+				EditorGUIUtility.SetLockedLayers(value);
+				EditorPrefs.SetInt("LockedLayers", lockedLayers);
+			}
+		}
+	}
+	int m_LockedLayers = -1;
+
+	private void OnEnable ()
+	{
+		s_Get = this;
+		EditorApplication.globalEventHandler += ControlsHack;
+		pivotMode = (PivotMode)EditorPrefs.GetInt ("PivotMode", 0);
+		pivotRotation = (PivotRotation)EditorPrefs.GetInt ("PivotRotation", 0);
+		visibleLayers = EditorPrefs.GetInt ("VisibleLayers", -1);
+		lockedLayers = EditorPrefs.GetInt ("LockedLayers", 0);
+	}
+	private void OnDisable ()
+	{
+		EditorApplication.globalEventHandler -= ControlsHack;
+	}
+
+	// Note: This does not get called automatically by Unity, so we call if from the toolbar
+	internal static void OnSelectionChange () {
+		ResetGlobalHandleRotation ();
+	}
+
+	internal static void ResetGlobalHandleRotation () {
+		get.m_GlobalHandleRotation = Quaternion.identity;
+	}
+	internal Quaternion m_GlobalHandleRotation = Quaternion.identity;
+	Tool currentTool = Tool.Move;
+	ViewTool m_ViewTool = ViewTool.Pan;
+	
+	// This handles updating the currently selected tool with keys (ALT-drag, etc...)
+	static int originalTool;			// The tool that was selected before we held down ALT
+	static PrefKey kViewKey = new PrefKey("Tools/View","q");
+	static PrefKey kMoveKey = new PrefKey("Tools/Move","w");
+	static PrefKey kRotateKey = new PrefKey("Tools/Rotate","e");
+	static PrefKey kScaleKey = new PrefKey("Tools/Scale","r");
+	static PrefKey kPivotMode = new PrefKey("Tools/Pivot Mode","z");
+	static PrefKey kPivotRotation = new PrefKey("Tools/Pivot Rotation","x");
+
+	// Temp workaround until we get the event handling in place
+	internal static void ControlsHack () {
+		Event evt = Event.current;
+		if (kViewKey.activated) {
+			Tools.current = 0;
+			ResetGlobalHandleRotation ();
+			evt.Use ();
+			if (Toolbar.get)			
+				Toolbar.get.Repaint ();
+			else
+				Debug.LogError ("Press Play twice for sceneview keyboard shortcuts to work");
+		}
+		if (kMoveKey.activated) {
+			Tools.current = Tool.Move;
+			ResetGlobalHandleRotation ();
+			evt.Use ();
+			if (Toolbar.get)			
+				Toolbar.get.Repaint ();
+			else
+				Debug.LogError ("Press Play twice for sceneview keyboard shortcuts to work");
+		}
+		if (kRotateKey.activated) {
+			Tools.current = Tool.Rotate;
+			ResetGlobalHandleRotation ();
+			evt.Use ();
+			if (Toolbar.get)			
+				Toolbar.get.Repaint ();
+			else
+				Debug.LogError ("Press Play twice for sceneview keyboard shortcuts to work");
+		}
+		if (kScaleKey.activated) {
+			Tools.current = Tool.Scale;
+			ResetGlobalHandleRotation ();
+			evt.Use ();
+			if (Toolbar.get)			
+				Toolbar.get.Repaint ();
+			else
+				Debug.LogError ("Press Play twice for sceneview keyboard shortcuts to work");
+		}
+		if (kPivotMode.activated) {
+			pivotMode = (PivotMode)(1 - (int)pivotMode);
+			ResetGlobalHandleRotation ();
+			evt.Use ();
+			Tools.RepaintAllToolViews ();		
+		}
+		if (kPivotRotation.activated) {
+			pivotRotation = (PivotRotation)(1 - (int)pivotRotation);
+			ResetGlobalHandleRotation ();
+			evt.Use ();	
+			Tools.RepaintAllToolViews ();
+		}
+	}
+	
+	internal static void RepaintAllToolViews ()
+	{
+		if (Toolbar.get)
+			Toolbar.get.Repaint ();
+		SceneView.RepaintAll ();
+		InspectorWindow.RepaintAllInspectors ();
+	}
+
+	internal static void HandleKeys () {
+		ControlsHack ();
+	}	
+	internal static void LockHandlePosition (Vector3 pos) 
+	{
+		s_LockHandlePosition = pos;
+		s_LockHandlePositionActive = true;
+	}
+
+	internal static Vector3 handleOffset;
+	
+	internal static void LockHandlePosition () 
+	{
+		s_LockHandlePosition = handlePosition;
+		s_LockHandlePositionActive = true;
+	}
+
+	internal static void UnlockHandlePosition () 
+	{
+		s_LockHandlePositionActive = false;
+	}
+	
+
+	internal static Quaternion handleLocalRotation {
+		get {
+			Transform t = Selection.activeTransform;
+			if (!t)
+				return Quaternion.identity;
+			return t.rotation;
+		}
+	}
+END
+
+} // namespace

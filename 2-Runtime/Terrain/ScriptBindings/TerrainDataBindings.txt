@@ -1,0 +1,406 @@
+C++RAW
+#include "UnityPrefix.h"
+#include "Runtime/Terrain/Heightmap.h"
+#include "Runtime/Filters/Mesh/LodMesh.h"
+#include "Runtime/Terrain/DetailDatabase.h"
+#include "Runtime/Terrain/SplatDatabase.h"
+#include "Runtime/Terrain/TerrainData.h"
+#include "Runtime/Terrain/TerrainInstance.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/BaseClasses/GameObject.h"
+#include "Runtime/Terrain/TerrainRenderer.h"
+#include "Runtime/Camera/Light.h"
+#include "Runtime/Terrain/DetailRenderer.h"
+#include "Runtime/Terrain/ImposterRenderTexture.h"
+#include "Runtime/Terrain/TreeRenderer.h"
+#include "Runtime/Terrain/Wind.h"
+#include "Runtime/Terrain/Tree.h"
+#include "Runtime/Scripting/Scripting.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+
+using namespace Unity;
+using namespace std;
+
+CSRAW
+
+#if ENABLE_TERRAIN
+
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace UnityEngine
+{
+
+CSRAW [StructLayout (LayoutKind.Sequential)]
+CONDITIONAL ENABLE_TERRAIN
+CLASS TreePrototype
+	CSRAW internal GameObject m_Prefab;
+	CSRAW internal float m_BendFactor;
+
+	CSRAW public GameObject prefab { get { return m_Prefab; } set { m_Prefab = value; } }
+
+	CSRAW public float bendFactor { get { return m_BendFactor; } set { m_BendFactor = value; } }
+END
+
+ENUM DetailRenderMode
+	GrassBillboard = 0,
+	VertexLit = 1,
+	Grass = 2
+END
+
+CSRAW [StructLayout (LayoutKind.Sequential)]
+CONDITIONAL ENABLE_TERRAIN
+CLASS DetailPrototype
+	CSRAW GameObject	m_Prototype = null;
+	CSRAW Texture2D		m_PrototypeTexture = null;
+	CSRAW Color			m_HealthyColor = new Color (67/255F, 249/255F, 42/255F, 1 );
+	CSRAW Color			m_DryColor = new Color (205/255.0F, 188/255.0F, 26/255.0F, 1.0F ) ;
+	CSRAW float			m_MinWidth = 1.0F;
+	CSRAW float			m_MaxWidth = 2.0F;
+	CSRAW float			m_MinHeight = 1F;
+	CSRAW float			m_MaxHeight = 2F;
+	CSRAW float			m_NoiseSpread = 0.1F;
+	CSRAW float			m_BendFactor = 0.1F;
+	CSRAW int			m_RenderMode = 2;
+	CSRAW int			m_UsePrototypeMesh = 0;
+
+	CSRAW public GameObject prototype { get { return m_Prototype; } set  { m_Prototype = value; } }
+
+	CSRAW public Texture2D prototypeTexture { get { return m_PrototypeTexture; } set { m_PrototypeTexture = value; } }
+
+	CSRAW public float minWidth { get { return m_MinWidth; } set { m_MinWidth = value; } }
+
+	CSRAW public float maxWidth { get { return m_MaxWidth; } set { m_MaxWidth = value; } }
+
+	CSRAW public float minHeight { get { return m_MinHeight; } set { m_MinHeight = value; } }
+
+	CSRAW public float maxHeight { get { return m_MaxHeight; } set { m_MaxHeight = value; } }
+
+	CSRAW public float noiseSpread { get { return m_NoiseSpread; } set { m_NoiseSpread = value; } }
+
+	CSRAW public float bendFactor { get { return m_BendFactor; } set { m_BendFactor = value; } }
+
+	CSRAW public Color healthyColor { get  { return m_HealthyColor; } set { m_HealthyColor = value; } }
+
+	CSRAW public Color dryColor { get  { return m_DryColor; } set { m_DryColor = value; } }
+
+	CSRAW public DetailRenderMode renderMode { get { return (DetailRenderMode)m_RenderMode; } set { m_RenderMode = (int)value; } }
+
+	CSRAW public bool usePrototypeMesh { get { return m_UsePrototypeMesh != 0; } set { m_UsePrototypeMesh = value ? 1 : 0; } }
+END
+
+CSRAW [StructLayout (LayoutKind.Sequential)]
+CONDITIONAL ENABLE_TERRAIN
+CLASS SplatPrototype
+	CSRAW Texture2D m_Texture;
+	CSRAW Texture2D m_NormalMap;
+	CSRAW Vector2 m_TileSize = new Vector2 (15,15);
+	CSRAW Vector2 m_TileOffset = new Vector2 (0, 0);
+	
+	CSRAW public Texture2D texture { get { return m_Texture; } set { m_Texture = value; } }
+	
+	CSRAW public Texture2D normalMap { get { return m_NormalMap; } set { m_NormalMap = value; } }
+
+	CSRAW public Vector2 tileSize { get { return m_TileSize; } set { m_TileSize = value; } }
+	
+	CSRAW public Vector2 tileOffset { get { return m_TileOffset; } set { m_TileOffset = value; } }
+END
+
+
+CONDITIONAL ENABLE_TERRAIN
+STRUCT TreeInstance
+	CSRAW	Vector3		m_Position;
+	CSRAW	float			m_WidthScale;
+	CSRAW	float			m_HeightScale;
+	CSRAW	Color32		m_Color;
+	CSRAW	Color32		m_LightmapColor;
+	CSRAW	int			m_Index;
+	CSRAW	float			m_TemporaryDistance;
+
+	public Vector3 position { get { return m_Position; } set { m_Position = value; } }
+
+	public float widthScale { get { return m_WidthScale; } set { m_WidthScale = value; } }
+
+	public float heightScale { get { return m_HeightScale; } set { m_HeightScale = value; } }
+	
+	public Color color { get { return m_Color; } set { m_Color = value; } }
+		
+	public Color lightmapColor { get { return m_LightmapColor; } set { m_LightmapColor = value; } }
+
+	public int prototypeIndex { get { return m_Index; } set { m_Index = value; } }
+	
+	internal float temporaryDistance { get { return m_TemporaryDistance; } set { m_TemporaryDistance = value; } }	
+END
+
+CONDITIONAL ENABLE_TERRAIN
+CLASS TerrainData : Object
+	CSRAW public TerrainData ()
+	{
+		Internal_Create(this);
+	}
+
+	CUSTOM internal void Internal_Create ([Writable]TerrainData terrainData)
+	{
+		TerrainData* td = NEW_OBJECT (TerrainData);
+		td->Reset();
+
+		//this is only for ensuring, that HeightMap initialized properly before someone uses TerrainData
+		if (td)
+			td->GetHeightmap().SetResolution(0);
+
+		Scripting::ConnectScriptingWrapperToObject (terrainData.GetScriptingObject(), td);
+		td->AwakeFromLoad(kInstantiateOrCreateFromCodeAwakeFromLoad);
+	}
+	
+	CUSTOM internal bool HasUser (GameObject user) { return self->HasUser (user); }	
+	CUSTOM internal void AddUser (GameObject user) { self->AddUser (user); }
+	CUSTOM internal void RemoveUser (GameObject user) { self->RemoveUser (user); }
+	
+	// HEIGHTMAP INTERFACE
+	C++RAW #define GETHEIGHT (&(self->GetHeightmap()))
+	
+	// =============================================
+	C++RAW #define GETDETAIL (&(self->GetDetailDatabase()))
+
+	C++RAW #define GETTREEDATABASE (&(self->GetTreeDatabase()))
+
+	// PhysicMaterial the terrain.
+	CONDITIONAL ENABLE_PHYSICS
+	CUSTOM_PROP PhysicMaterial physicMaterial { return Scripting::ScriptingWrapperFor(GETHEIGHT->GetPhysicMaterial ()); } { GETHEIGHT->SetPhysicMaterial (value); }
+	CUSTOM_PROP int heightmapWidth { return GETHEIGHT->GetWidth (); }
+	CUSTOM_PROP int heightmapHeight { return GETHEIGHT->GetHeight (); }
+	
+	CUSTOM_PROP int heightmapResolution { return GETHEIGHT->GetResolution (); } { GETHEIGHT->SetResolution (value); }
+	
+	CUSTOM_PROP Vector3 heightmapScale { return GETHEIGHT->GetScale (); }
+
+	CUSTOM_PROP Vector3 size { return GETHEIGHT->GetSize (); } { GETHEIGHT->SetSize (value); }
+
+	CUSTOM float GetHeight (int x, int y) { return GETHEIGHT->GetHeight (x,y); }
+	CUSTOM float GetInterpolatedHeight (float x, float y) { return GETHEIGHT->GetInterpolatedHeight (x,y); }
+
+	CUSTOM public float[,] GetHeights (int xBase, int yBase, int width, int height) {
+	
+		if(xBase < 0 || yBase < 0 || xBase+width > GETHEIGHT->GetWidth() || yBase+height > GETHEIGHT->GetHeight ())
+		{
+			Scripting::RaiseMonoException ("Trying to access out-of-bounds terrain height information.");
+			return SCRIPTING_NULL;
+		}
+
+		ScriptingArrayPtr map = CreateScriptingArray2D<float> (MONO_COMMON.floatSingle, height, width);
+		GETHEIGHT->GetHeights (xBase, yBase, width, height, &Scripting::GetScriptingArrayElement<float>(map, 0));
+		return map;
+	}
+
+	CSRAW public void SetHeights (int xBase, int yBase, float[,] heights) {
+		if (heights == null)
+		{
+			throw new System.NullReferenceException ();
+		}
+		if (xBase+heights.GetLength(1) > heightmapWidth || xBase < 0 || yBase < 0 || yBase+heights.GetLength(0) > heightmapHeight)
+		{
+			throw new System.Exception (UnityString.Format ("X or Y base out of bounds. Setting up to {0}x{1} while map size is {2}x{3}", xBase+heights.GetLength(1), yBase+heights.GetLength(0), heightmapWidth, heightmapHeight));
+		}
+
+		Internal_SetHeights (xBase, yBase, heights.GetLength(1), heights.GetLength(0), heights);
+	}
+
+	CUSTOM private void Internal_SetHeights (int xBase, int yBase, int width, int height, float[,] heights)
+	{
+		GETHEIGHT->SetHeights(xBase, yBase, width, height, &Scripting::GetScriptingArrayElement<float>(heights, 0), false);
+		GETTREEDATABASE->RecalculateTreePositions();
+	}
+
+	CUSTOM private void Internal_SetHeightsDelayLOD (int xBase, int yBase, int width, int height, float[,] heights)
+	{
+		GETHEIGHT->SetHeights(xBase, yBase, width, height, &Scripting::GetScriptingArrayElement<float>(heights, 0), true);
+	}
+
+	CSRAW internal void SetHeightsDelayLOD (int xBase, int yBase, float[,] heights)
+	{
+		Internal_SetHeightsDelayLOD (xBase, yBase, heights.GetLength(1), heights.GetLength(0), heights);
+	}
+	
+	CUSTOM float GetSteepness (float x, float y) { return GETHEIGHT->GetSteepness (x,y); }
+	
+	CUSTOM Vector3 GetInterpolatedNormal (float x, float y) { return GETHEIGHT->GetInterpolatedNormal (x,y); }
+
+
+	CUSTOM internal int GetAdjustedSize (int size) { return GETHEIGHT->GetAdjustedSize (size); }
+
+	C++RAW #undef GETHEIGHT
+
+	CUSTOM_PROP float wavingGrassStrength { return GETDETAIL->GetWavingGrassStrength(); } { GETDETAIL->SetWavingGrassStrength (value); self->SetDirty(); }
+	CUSTOM_PROP float wavingGrassAmount { return GETDETAIL->GetWavingGrassAmount(); } { GETDETAIL-> SetWavingGrassAmount (value); self->SetDirty(); }
+	CUSTOM_PROP float wavingGrassSpeed { return GETDETAIL->GetWavingGrassSpeed(); } { GETDETAIL-> SetWavingGrassSpeed (value); self->SetDirty(); }
+	CUSTOM_PROP Color wavingGrassTint { return GETDETAIL->GetWavingGrassTint(); } { GETDETAIL-> SetWavingGrassTint (value); self->SetDirty(); }
+
+	CUSTOM_PROP int detailWidth { return GETDETAIL->GetWidth (); }
+	
+	CUSTOM_PROP int detailHeight { return GETDETAIL->GetHeight (); }
+
+	CUSTOM void SetDetailResolution (int detailResolution, int resolutionPerPatch)
+	{
+		GETDETAIL->SetDetailResolution(detailResolution, resolutionPerPatch);
+	}
+	
+	CUSTOM_PROP int detailResolution { return GETDETAIL->GetResolution (); }
+
+	CUSTOM_PROP internal int detailResolutionPerPatch { return GETDETAIL->GetResolutionPerPatch (); }
+
+	CUSTOM internal void ResetDirtyDetails () { GETDETAIL->ResetDirtyDetails (); }
+
+	CUSTOM void RefreshPrototypes ()
+	{
+		GETDETAIL->RefreshPrototypes ();
+		GETTREEDATABASE->RefreshPrototypes ();
+	}
+	
+	CUSTOM_PROP DetailPrototype[] detailPrototypes 
+	{
+		return VectorToScriptingClassArray<DetailPrototype, MonoDetailPrototype> (GETDETAIL->GetDetailPrototypes(), MONO_COMMON.detailPrototype, DetailPrototypeToMono);
+	}
+	{
+		GETDETAIL->SetDetailPrototypes (ScriptingClassArrayToVector<DetailPrototype, MonoDetailPrototype> (value, DetailPrototypeToCpp));
+	}
+
+	CUSTOM 	int[] GetSupportedLayers (int xBase, int yBase, int totalWidth, int totalHeight) {
+		int size = GETDETAIL->GetSupportedLayers (xBase, yBase, totalWidth, totalHeight, NULL);  // Get the count of layers
+		ScriptingArrayPtr arr = CreateScriptingArray<int>(MONO_COMMON.int_32, size);
+		GETDETAIL->GetSupportedLayers (xBase, yBase, totalWidth, totalHeight, &Scripting::GetScriptingArrayElement<int> (arr, 0));
+		return arr;
+	}
+
+	CUSTOM int[,] GetDetailLayer (int xBase, int yBase, int width, int height, int layer) {
+		ScriptingArrayPtr map = CreateScriptingArray2D<int> (MONO_COMMON.int_32, height, width);
+		GETDETAIL->GetLayer (xBase, yBase, width, height, layer, &Scripting::GetScriptingArrayElement<int> (map, 0));
+		return map;	
+	}
+
+	CSRAW public void SetDetailLayer (int xBase, int yBase, int layer, int[,] details) {
+		Internal_SetDetailLayer (xBase, yBase, details.GetLength(1), details.GetLength(0), layer, details);
+	}
+	
+	CUSTOM private void Internal_SetDetailLayer (int xBase, int yBase, int totalWidth, int totalHeight, int detailIndex, int[,] data)
+	{
+		GETDETAIL->SetLayer (xBase, yBase, totalWidth, totalHeight, detailIndex, &Scripting::GetScriptingArrayElement<int> (data, 0));
+	}
+	
+	CUSTOM_PROP TreeInstance[] treeInstances
+	{
+		return CreateScriptingArray(&GETTREEDATABASE->GetInstances()[0], GETTREEDATABASE->GetInstances().size(), MONO_COMMON.treeInstance);
+	}
+	{
+		Scripting::RaiseIfNull((ScriptingObjectPtr)value);
+		TreeInstance *first = &Scripting::GetScriptingArrayElement<TreeInstance> (value, 0);
+		GETTREEDATABASE->GetInstances().assign (first, first + GetScriptingArraySize(value));
+		GETTREEDATABASE->UpdateTreeInstances();
+	}
+	CUSTOM_PROP TreePrototype[] treePrototypes
+		{ return VectorToScriptingClassArray<TreePrototype, MonoTreePrototype> (GETTREEDATABASE->GetTreePrototypes(), MONO_COMMON.treePrototype, TreePrototypeToMono); }
+		{ GETTREEDATABASE->SetTreePrototypes (ScriptingClassArrayToVector<TreePrototype, MonoTreePrototype> (value, TreePrototypeToCpp)); }
+
+	CUSTOM internal void RemoveTreePrototype (int index)
+	{
+		GETTREEDATABASE->RemoveTreePrototype (index);
+	}
+	
+	CUSTOM internal void RecalculateTreePositions () 
+	{
+		GETTREEDATABASE->RecalculateTreePositions ();
+	}
+	
+	CUSTOM internal void RemoveDetailPrototype (int index)
+	{
+		GETDETAIL->RemoveDetailPrototype (index);
+	}
+	
+	C++RAW #undef GETDETAIL
+	
+	
+	// OLD SPLAT DATABASE
+	// =============================================
+	C++RAW #define GETSPLAT (&(self->GetSplatDatabase()))
+	
+	CUSTOM_PROP int alphamapLayers  { return GETSPLAT->GetDepth(); }
+	CUSTOM public float[,,] GetAlphamaps (int x, int y, int width, int height) {
+		ScriptingArrayPtr map = CreateScriptingArray3D<float> (MONO_COMMON.floatSingle, height, width, GETSPLAT->GetDepth ());
+		GETSPLAT->GetAlphamaps (x, y, width, height, &Scripting::GetScriptingArrayElement<float>(map, 0));
+		return map;
+	}
+
+	CUSTOM_PROP int alphamapResolution { return GETSPLAT->GetAlphamapResolution(); } { return GETSPLAT->SetAlphamapResolution(value); }
+	CUSTOM_PROP int alphamapWidth { return GETSPLAT->GetAlphamapResolution(); }
+	CUSTOM_PROP int alphamapHeight { return GETSPLAT->GetAlphamapResolution(); }
+	CUSTOM_PROP int baseMapResolution { return GETSPLAT->GetBaseMapResolution(); } { return GETSPLAT->SetBaseMapResolution(value); }
+
+	CSRAW public void SetAlphamaps (int x, int y, float[,,] map)
+	{
+		if (map.GetLength(2) != alphamapLayers) {
+			throw new System.Exception (UnityString.Format ("Float array size wrong (layers should be {0})", alphamapLayers));
+		}
+		// TODO: crop the map or throw if outside,
+		
+		Internal_SetAlphamaps (x,y, map.GetLength(1), map.GetLength(0), map);
+	}
+	CUSTOM private void Internal_SetAlphamaps (int x, int y, int width, int height, float[,,] map)
+	{
+		GETSPLAT->SetAlphamaps (x, y, width, height, &Scripting::GetScriptingArrayElement<float>(map, 0));
+	}
+
+	CUSTOM internal void RecalculateBasemapIfDirty()
+	{
+		GETSPLAT->RecalculateBasemapIfDirty();
+	}
+	
+	CUSTOM internal void SetBasemapDirty(bool dirty)
+	{
+		GETSPLAT->SetBasemapDirty(dirty);
+	}
+	
+	CUSTOM private Texture2D GetAlphamapTexture(int index) {
+		return Scripting::ScriptingWrapperFor (GETSPLAT->GetAlphaTexture(index)); 
+	}
+
+	CUSTOM_PROP private int alphamapTextureCount {
+		return GETSPLAT->GetAlphaTextureCount(); 
+	}
+	
+	CSRAW internal Texture2D[] alphamapTextures
+	{
+		get {
+			Texture2D[] splatTextures = new Texture2D[alphamapTextureCount];
+			for (int i=0;i<splatTextures.Length;i++)
+				splatTextures[i] =  GetAlphamapTexture(i);
+			return splatTextures;
+		}
+	}
+	
+	CUSTOM_PROP SplatPrototype[] splatPrototypes
+		{ return VectorToScriptingClassArray<SplatPrototype, MonoSplatPrototype> (GETSPLAT->GetSplatPrototypes(), MONO_COMMON.splatPrototype, SplatPrototypeToMono); }
+		{ GETSPLAT->SetSplatPrototypes (ScriptingClassArrayToVector<SplatPrototype, MonoSplatPrototype> (value, SplatPrototypeToCpp)); }
+	C++RAW #undef GET
+	
+	CUSTOM internal bool HasTreeInstances ()
+	{
+		return !self->GetTreeDatabase().GetInstances().empty();
+	}
+
+	CUSTOM internal void AddTree (out TreeInstance tree)
+	{
+		self->GetTreeDatabase().AddTree (*tree);	
+	}
+	
+	CUSTOM internal int RemoveTrees (Vector2 position, float radius, int prototypeIndex)
+	{
+		return self->GetTreeDatabase().RemoveTrees (position, radius, prototypeIndex);
+	}	
+END
+
+CSRAW
+}
+#endif // ENABLE_TERRAIN

@@ -1,0 +1,675 @@
+C++RAW
+#include "UnityPrefix.h"
+#include "Runtime/Terrain/Heightmap.h"
+#include "Runtime/Filters/Mesh/LodMesh.h"
+#include "Runtime/Terrain/DetailDatabase.h"
+#include "Runtime/Terrain/SplatDatabase.h"
+#include "Runtime/Terrain/TerrainData.h"
+#include "Runtime/Terrain/TerrainInstance.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/BaseClasses/GameObject.h"
+#include "Runtime/Terrain/TerrainRenderer.h"
+#include "Runtime/Camera/Light.h"
+#include "Runtime/Terrain/DetailRenderer.h"
+#include "Runtime/Terrain/ImposterRenderTexture.h"
+#include "Runtime/Terrain/TreeRenderer.h"
+#include "Runtime/Terrain/Wind.h"
+#include "Runtime/Terrain/Tree.h"
+#include "Runtime/Scripting/GetComponent.h"
+#include "Runtime/Scripting/Scripting.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Runtime/Scripting/Backend/ScriptingInvocation.h"
+#include "Runtime/Scripting/Backend/ScriptingTypeRegistry.h"
+#include "Runtime/Interfaces/ITerrainManager.h"
+
+using namespace Unity;
+using namespace std;
+
+CSRAW
+
+#if ENABLE_TERRAIN
+
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace UnityEngine
+{
+
+// List of changes done to the terrain for OnTerrainChanged
+// OnTerrainChanged is called with a bitfield of these items telling it what was changed.
+CSRAW
+[Flags]
+internal enum TerrainChangedFlags
+{
+	NoChange = 0,
+	Heightmap = 1,
+	TreeInstances = 2,
+	DelayedHeightmapUpdate = 4,
+	FlushEverythingImmediately = 8,
+	RemoveDirtyDetailsImmediately = 16,
+	WillBeDestroyed = 256,
+}
+
+ENUM TerrainRenderFlags
+	heightmap = 1,
+	trees = 2,
+	details = 4,
+	all = heightmap | trees | details
+END
+
+CSRAW
+CONDITIONAL ENABLE_TERRAIN
+[AddComponentMenu("")]
+[ExecuteInEditMode]
+CLASS Terrain : MonoBehaviour
+	CSRAW 
+	[SerializeField]
+	private TerrainData m_TerrainData;
+	[SerializeField]
+	float m_TreeDistance = 5000.0F;
+	[SerializeField]
+	float m_TreeBillboardDistance = 50.0F;
+	[SerializeField]
+	float m_TreeCrossFadeLength = 5.0F;
+	[SerializeField]
+	int   m_TreeMaximumFullLODCount = 50;
+	[SerializeField]
+	float m_DetailObjectDistance = 80.0F;
+	[SerializeField]
+	float m_DetailObjectDensity = 1.0f;
+	[SerializeField]
+	float m_HeightmapPixelError = 5.0F;
+	[SerializeField]
+	float m_SplatMapDistance = 1000.0F;
+	[SerializeField]
+	int   m_HeightmapMaximumLOD = 0;
+	[SerializeField]
+	bool  m_CastShadows = true;
+	[SerializeField]
+	int m_LightmapIndex = -1;
+	[SerializeField]
+	int m_LightmapSize = 1024;
+	[SerializeField]
+	bool m_DrawTreesAndFoliage = true;
+	[SerializeField]
+	Material m_MaterialTemplate;
+
+	[System.NonSerialized]
+	IntPtr m_TerrainInstance;
+
+	// Since the terrain object can be disabled on being loaded, there is
+	// no way to reliably initialize the TerrainInstance after loaded.
+	// So initialization is moved here.
+	private IntPtr InstanceObject
+	{
+		get
+		{
+			if (m_TerrainInstance == IntPtr.Zero)
+			{
+				m_TerrainInstance = Construct();
+				Internal_SetTerrainData(m_TerrainInstance, m_TerrainData);
+				Internal_SetTreeDistance(m_TerrainInstance, m_TreeDistance);
+				Internal_SetTreeBillboardDistance(m_TerrainInstance, m_TreeBillboardDistance);
+				Internal_SetTreeCrossFadeLength(m_TerrainInstance, m_TreeCrossFadeLength);
+				Internal_SetTreeMaximumFullLODCount(m_TerrainInstance, m_TreeMaximumFullLODCount);
+				Internal_SetDetailObjectDistance(m_TerrainInstance, m_DetailObjectDistance);
+				Internal_SetDetailObjectDensity(m_TerrainInstance, m_DetailObjectDensity);
+				Internal_SetHeightmapPixelError(m_TerrainInstance, m_HeightmapPixelError);
+				Internal_SetBasemapDistance(m_TerrainInstance, m_SplatMapDistance);
+				Internal_SetHeightmapMaximumLOD(m_TerrainInstance, m_HeightmapMaximumLOD);
+				Internal_SetCastShadows(m_TerrainInstance, m_CastShadows);
+				Internal_SetLightmapIndex(m_TerrainInstance, m_LightmapIndex);
+				Internal_SetLightmapSize(m_TerrainInstance, m_LightmapSize);
+				Internal_SetDrawTreesAndFoliage(m_TerrainInstance, m_DrawTreesAndFoliage);
+				Internal_SetMaterialTemplate(m_TerrainInstance, m_MaterialTemplate);
+			}
+			return m_TerrainInstance;
+		}
+		set
+		{
+			m_TerrainInstance = value;
+		}
+	}
+
+	private void OnDestroy()
+	{
+		OnDisable();
+
+		// Using InstanceObject potentially creates the object then immediately destroy it
+		Cleanup(m_TerrainInstance);
+	}
+
+	CUSTOM private void Cleanup(IntPtr terrainInstance)
+	{ 
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		UNITY_DELETE(ti, kMemTerrain);
+	}
+
+	CSRAW public TerrainRenderFlags editorRenderFlags
+	{
+		get { return (TerrainRenderFlags)GetEditorRenderFlags(InstanceObject); }
+		set { SetEditorRenderFlags(InstanceObject, (int)value); }
+	}
+	CUSTOM private int GetEditorRenderFlags(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetEditorRenderFlags();
+	}
+	CUSTOM private void SetEditorRenderFlags(IntPtr terrainInstance, int flags)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetEditorRenderFlags((TerrainInstance::RenderFlags)flags);
+	}
+
+	CSRAW public TerrainData terrainData
+	{
+		get { m_TerrainData = Internal_GetTerrainData(InstanceObject); return m_TerrainData; }
+		set { m_TerrainData = value; Internal_SetTerrainData(InstanceObject, value); }
+	}
+	CUSTOM private TerrainData Internal_GetTerrainData(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return Scripting::ScriptingWrapperFor(ti->GetTerrainData());
+	}
+	CUSTOM private void Internal_SetTerrainData(IntPtr terrainInstance, TerrainData value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetTerrainData(value);
+	}
+
+	CSRAW public float treeDistance
+	{
+		get { m_TreeDistance = Internal_GetTreeDistance(InstanceObject); return m_TreeDistance; }
+		set { m_TreeDistance = value; Internal_SetTreeDistance(InstanceObject, value); }
+	}
+	CUSTOM private float Internal_GetTreeDistance(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetTreeDistance();
+	}
+	CUSTOM private void Internal_SetTreeDistance(IntPtr terrainInstance, float value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetTreeDistance(value);
+	}
+
+	CSRAW public float treeBillboardDistance
+	{
+		get { m_TreeBillboardDistance = Internal_GetTreeBillboardDistance(InstanceObject); return m_TreeBillboardDistance; }
+		set { m_TreeBillboardDistance = value; Internal_SetTreeBillboardDistance(InstanceObject, value); }
+	}
+	CUSTOM private float Internal_GetTreeBillboardDistance(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetTreeBillboardDistance();
+	}
+	CUSTOM private void Internal_SetTreeBillboardDistance(IntPtr terrainInstance, float value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetTreeBillboardDistance(value);
+	}
+
+	CSRAW public float treeCrossFadeLength
+	{
+		get { m_TreeCrossFadeLength = Internal_GetTreeCrossFadeLength(InstanceObject); return m_TreeCrossFadeLength; }
+		set { m_TreeCrossFadeLength = value; Internal_SetTreeCrossFadeLength(InstanceObject, value); }
+	}
+	CUSTOM private float Internal_GetTreeCrossFadeLength(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetTreeCrossFadeLength();
+	}
+	CUSTOM private void Internal_SetTreeCrossFadeLength(IntPtr terrainInstance, float value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetTreeCrossFadeLength(value);
+	}
+
+	CSRAW public int treeMaximumFullLODCount
+	{
+		get { m_TreeMaximumFullLODCount = Internal_GetTreeMaximumFullLODCount(InstanceObject); return m_TreeMaximumFullLODCount; }
+		set { m_TreeMaximumFullLODCount = value; Internal_SetTreeMaximumFullLODCount(InstanceObject, value); }
+	}
+	CUSTOM private int Internal_GetTreeMaximumFullLODCount(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetTreeMaximumFullLODCount();
+	}
+	CUSTOM private void Internal_SetTreeMaximumFullLODCount(IntPtr terrainInstance, int value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetTreeMaximumFullLODCount(value);
+	}
+
+	CSRAW public float detailObjectDistance
+	{
+		get { m_DetailObjectDistance = Internal_GetDetailObjectDistance(InstanceObject); return m_DetailObjectDistance; }
+		set { m_DetailObjectDistance = value; Internal_SetDetailObjectDistance(InstanceObject, value); }
+	}
+	CUSTOM private float Internal_GetDetailObjectDistance(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetDetailObjectDistance();
+	}
+	CUSTOM private void Internal_SetDetailObjectDistance(IntPtr terrainInstance, float value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetDetailObjectDistance(value);
+	}
+
+	CSRAW public float detailObjectDensity
+	{
+		get { m_DetailObjectDensity = Internal_GetDetailObjectDensity(InstanceObject); return m_DetailObjectDensity; }
+		set { m_DetailObjectDensity = value; Internal_SetDetailObjectDensity(InstanceObject, value); }
+	}
+	CUSTOM private float Internal_GetDetailObjectDensity(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetDetailObjectDensity();
+	}
+	CUSTOM private void Internal_SetDetailObjectDensity(IntPtr terrainInstance, float value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetDetailObjectDensity(value);
+	}
+
+	CSRAW public float heightmapPixelError
+	{
+		get { m_HeightmapPixelError = Internal_GetHeightmapPixelError(InstanceObject); return m_HeightmapPixelError; }
+		set { m_HeightmapPixelError = value; Internal_SetHeightmapPixelError(InstanceObject, value); }
+	}
+	CUSTOM private float Internal_GetHeightmapPixelError(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetHeightmapPixelError();
+	}
+	CUSTOM private void Internal_SetHeightmapPixelError(IntPtr terrainInstance, float value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetHeightmapPixelError(value);
+	}
+
+	CSRAW public int heightmapMaximumLOD
+	{
+		get { m_HeightmapMaximumLOD = Internal_GetHeightmapMaximumLOD(InstanceObject); return m_HeightmapMaximumLOD; }
+		set { m_HeightmapMaximumLOD = value; Internal_SetHeightmapMaximumLOD(InstanceObject, value); }
+	}
+	CUSTOM private int Internal_GetHeightmapMaximumLOD(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetHeightmapMaximumLOD();
+	}
+	CUSTOM private void Internal_SetHeightmapMaximumLOD(IntPtr terrainInstance, int value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetHeightmapMaximumLOD(value);
+	}
+
+	CSRAW public float basemapDistance
+	{
+		get { m_SplatMapDistance = Internal_GetBasemapDistance(InstanceObject); return m_SplatMapDistance; }
+		set { m_SplatMapDistance = value; Internal_SetBasemapDistance(InstanceObject, value); }
+	}
+	CUSTOM private float Internal_GetBasemapDistance(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetBasemapDistance();
+	}
+	CUSTOM private void Internal_SetBasemapDistance(IntPtr terrainInstance, float value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetBasemapDistance(value);
+	}
+
+	OBSOLETE error use basemapDistance
+	CSRAW public float splatmapDistance
+	{
+		get { return basemapDistance; }
+		set { basemapDistance = value; }
+	}
+
+	CSRAW public int lightmapIndex
+	{ 
+		get { m_LightmapIndex = Internal_GetLightmapIndex(InstanceObject); return m_LightmapIndex; }
+		set { m_LightmapIndex = value; Internal_SetLightmapIndex(InstanceObject, value); }
+	}
+	CSRAW private void SetLightmapIndex(int value)
+	{ 
+		lightmapIndex = value;
+	} 
+	CSRAW private void ShiftLightmapIndex(int offset)
+	{
+		lightmapIndex += offset;
+	}
+	CUSTOM private int Internal_GetLightmapIndex(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetLightmapIndex();
+	}
+	CUSTOM private void Internal_SetLightmapIndex(IntPtr terrainInstance, int value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetLightmapIndex(value);
+	}
+	
+	CSRAW internal int lightmapSize
+	{
+		get { m_LightmapSize = Internal_GetLightmapSize(InstanceObject); return m_LightmapSize; }
+		set { m_LightmapSize = value; Internal_SetLightmapSize(InstanceObject, value); }
+	}
+	CUSTOM private int Internal_GetLightmapSize(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetLightmapSize();
+	}
+	CUSTOM private void Internal_SetLightmapSize(IntPtr terrainInstance, int value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetLightmapSize(value);
+	}
+
+	CSRAW public bool castShadows
+	{
+		get { m_CastShadows = Internal_GetCastShadows(InstanceObject); return m_CastShadows; }
+		set { m_CastShadows = value; Internal_SetCastShadows(InstanceObject, value); }
+	}
+	CUSTOM private bool Internal_GetCastShadows(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetCastShadows();
+	}
+	CUSTOM private void Internal_SetCastShadows(IntPtr terrainInstance, bool value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetCastShadows(value);
+	}	
+	
+	CSRAW public Material materialTemplate
+	{
+		get { m_MaterialTemplate = Internal_GetMaterialTemplate(InstanceObject); return m_MaterialTemplate; }
+		set { m_MaterialTemplate = value; Internal_SetMaterialTemplate(InstanceObject, value); }
+	}
+	CUSTOM private Material Internal_GetMaterialTemplate(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return Scripting::ScriptingWrapperFor(const_cast<Material*>(ti->GetMaterialTemplate()));
+	}
+	CUSTOM private void Internal_SetMaterialTemplate(IntPtr terrainInstance, Material value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetMaterialTemplate(value);
+	}
+
+	CSRAW internal bool drawTreesAndFoliage
+	{		
+		get { m_DrawTreesAndFoliage = Internal_GetDrawTreesAndFoliage(InstanceObject); return m_DrawTreesAndFoliage; }
+		set { m_DrawTreesAndFoliage = value; Internal_SetDrawTreesAndFoliage(InstanceObject, value); }
+	}
+	CUSTOM private bool Internal_GetDrawTreesAndFoliage(IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetDrawTreesAndFoliage();
+	}
+	CUSTOM private void Internal_SetDrawTreesAndFoliage(IntPtr terrainInstance, bool value)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->SetDrawTreesAndFoliage(value);
+	}
+
+	CSRAW public float SampleHeight(Vector3 worldPosition)
+	{
+		return Internal_SampleHeight(InstanceObject, worldPosition);
+	}
+	CUSTOM private float Internal_SampleHeight (IntPtr terrainInstance, Vector3 worldPosition)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->SampleHeight(worldPosition);
+	}
+	
+	CSRAW internal void ApplyDelayedHeightmapModification()
+	{
+		Internal_ApplyDelayedHeightmapModification(InstanceObject);
+	}
+	CUSTOM internal void Internal_ApplyDelayedHeightmapModification (IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->ApplyDelayedHeightmapModification();
+	}
+
+	CSRAW public void AddTreeInstance(TreeInstance instance)
+	{
+		Internal_AddTreeInstance(InstanceObject, instance);
+	}
+	CUSTOM private void Internal_AddTreeInstance (IntPtr terrainInstance, TreeInstance instance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->AddTreeInstance(instance);
+	}
+
+	CSRAW public void SetNeighbors (Terrain left, Terrain top, Terrain right, Terrain bottom)
+	{
+		Internal_SetNeighbors(InstanceObject,
+							  left != null ? left.InstanceObject : IntPtr.Zero,
+							  top != null ? top.InstanceObject : IntPtr.Zero,
+							  right != null ? right.InstanceObject : IntPtr.Zero,
+							  bottom != null ? bottom.InstanceObject : IntPtr.Zero);
+	}
+	CUSTOM private void Internal_SetNeighbors (IntPtr terrainInstance, IntPtr left, IntPtr top, IntPtr right, IntPtr bottom)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		TerrainInstance* leftInstance = static_cast<TerrainInstance*>(left);
+		TerrainInstance* topInstance = static_cast<TerrainInstance*>(top);
+		TerrainInstance* rightInstance = static_cast<TerrainInstance*>(right);
+		TerrainInstance* bottomInstance = static_cast<TerrainInstance*>(bottom);
+		ti->SetNeighbors(leftInstance, topInstance, rightInstance, bottomInstance);
+	}
+
+	CSRAW public Vector3 GetPosition ()
+	{
+		return Internal_GetPosition(InstanceObject);
+	}
+	CUSTOM private Vector3 Internal_GetPosition (IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		return ti->GetPosition();
+	}
+
+	CSRAW public void Flush ()
+	{	
+		Internal_Flush(InstanceObject);
+	}
+	CUSTOM private void Internal_Flush (IntPtr terrainInstance)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->Flush();
+	}
+
+	CSRAW internal void RemoveTrees (Vector2 position, float radius, int prototypeIndex)
+	{
+		Internal_RemoveTrees(InstanceObject, position, radius, prototypeIndex);
+	}
+	CUSTOM private void Internal_RemoveTrees (IntPtr terrainInstance, Vector2 position, float radius, int prototypeIndex)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->RemoveTrees(position, radius, prototypeIndex);
+	}
+
+	CSRAW private void OnTerrainChanged (TerrainChangedFlags flags)
+	{
+		Internal_OnTerrainChanged(InstanceObject, flags);
+	}
+
+	CUSTOM private void Internal_OnTerrainChanged (IntPtr terrainInstance, TerrainChangedFlags flags)
+	{
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		Assert(ti != NULL);
+		ti->OnTerrainChanged(flags);
+	}
+
+	CUSTOM private IntPtr Construct ()
+	{
+		SET_ALLOC_OWNER(self->GetGameObjectPtr());
+		return UNITY_NEW(TerrainInstance, kMemTerrain)(self->GetGameObjectPtr());
+	}
+
+	CSRAW
+	internal void OnEnable ()
+	{
+		Internal_OnEnable(InstanceObject);
+	}
+
+	CUSTOM private void Internal_OnEnable (IntPtr terrainInstance)
+	{
+		Assert(terrainInstance != NULL);
+
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		ti->OnEnable();
+		GetITerrainManager()->AddTerrainAndSetActive(ti);
+	}
+	
+	CSRAW
+	internal void OnDisable()
+	{
+		Internal_OnDisable(InstanceObject);
+	}
+
+	CUSTOM private void Internal_OnDisable (IntPtr terrainInstance)
+	{
+		Assert(terrainInstance != NULL);
+
+		TerrainInstance* ti = static_cast<TerrainInstance*>(terrainInstance);
+		GetITerrainManager()->RemoveTerrain(ti);
+		ti->OnDisable();
+		ti->Flush();
+	}
+
+	C++RAW	
+	ScriptingObjectPtr TerrainInstanceToMonoBehaviour(TerrainInstance* ti)
+	{
+		if (!ti)
+			return SCRIPTING_NULL;
+
+		GameObject* go = ti->GetGameObject();
+		Assert(go != NULL);
+		return ScriptingGetComponentOfType(*go, MONO_COMMON.terrain);
+	}
+
+	CUSTOM_PROP static Terrain activeTerrain
+	{
+		TerrainInstance* ti = GetITerrainManager()->GetActiveTerrain();
+		return TerrainInstanceToMonoBehaviour(ti);
+	}
+	
+	CUSTOM_PROP static Terrain[] activeTerrains
+	{
+		TerrainList tl = GetITerrainManager()->GetActiveTerrains();
+
+		ScriptingClassPtr terrainClass = MONO_COMMON.terrain;
+		ScriptingArrayPtr array = CreateScriptingArray<ScriptingObjectPtr>(terrainClass, tl.size());
+
+		int index = 0;
+		for (TerrainList::iterator i = tl.begin(); i != tl.end(); ++i, index++)
+			Scripting::SetScriptingArrayElement(array, index, TerrainInstanceToMonoBehaviour (*i));
+		return array;
+	}
+
+	CSRAW
+	public static GameObject CreateTerrainGameObject (TerrainData assignTerrain)
+	{
+		// Also create the renderer game object
+	#if ENABLE_PHYSICS
+		GameObject go = new GameObject("Terrain", typeof(Terrain), typeof(TerrainCollider));
+	#else
+		GameObject go = new GameObject("Terrain", typeof(Terrain));
+	#endif
+		go.isStatic = true;
+		Terrain terrain = go.GetComponent(typeof(Terrain)) as Terrain;
+	#if ENABLE_PHYSICS
+		TerrainCollider collider = go.GetComponent(typeof(TerrainCollider)) as TerrainCollider;
+		collider.terrainData = assignTerrain;
+	#endif
+		terrain.terrainData = assignTerrain;
+
+		// The terrain already got an OnEnable, but the terrain data had not been set up correctly.
+		terrain.OnEnable ();
+
+		return go;
+	}
+
+	// This method is used internally by the engine to reconnect Terrain objects to TerrainData.
+	private static void ReconnectTerrainData()
+	{
+		List<Terrain> activeTerrains = new List<Terrain>(Terrain.activeTerrains);
+		foreach (Terrain terrain in activeTerrains)
+		{
+			// we could delete asset directly - remove it here (we are calling this function on StopAssetEditing
+			if (terrain.terrainData == null )
+			{
+				terrain.OnDisable();
+				continue;
+			}
+
+			// Check if connection to m_TerrainData has been lost
+			if (!terrain.terrainData.HasUser(terrain.gameObject))
+			{
+				// destroy and recreate data
+				terrain.OnDisable();
+				terrain.OnEnable();
+			}
+		}
+	}
+END
+
+CONDITIONAL ENABLE_TERRAIN
+CLASS Tree : Component
+	
+	AUTO_PTR_PROP ScriptableObject data GetTreeData SetTreeData
+
+END
+
+CSRAW
+}
+#endif // ENABLE_TERRAIN

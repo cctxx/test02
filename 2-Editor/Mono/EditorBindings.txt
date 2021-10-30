@@ -1,0 +1,313 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Editor/Src/Utility/CreateEditor.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Scripting/Scripting.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+namespace UnityEditor
+{
+
+// Tells an Editor class which run-time type it's an editor for.
+CLASS CustomEditor : System.Attribute
+	// Defines which object type the custom editor class can edit.
+	CSRAW public CustomEditor (System.Type inspectedType)
+	{
+		if (inspectedType == null)
+			Debug.LogError("Failed to load CustomEditor inspected type");
+		m_InspectedType = inspectedType;
+		m_EditorForChildClasses = false;
+	}
+	// Defines which object type the custom editor class can edit.
+	CSRAW public CustomEditor (System.Type inspectedType, bool editorForChildClasses)
+	{
+		if (inspectedType == null)
+			Debug.LogError("Failed to load CustomEditor inspected type");
+		m_InspectedType = inspectedType;
+		m_EditorForChildClasses = editorForChildClasses;
+	}
+	//*undocumented*
+	internal Type m_InspectedType;
+	//*undocumented*
+	internal bool m_EditorForChildClasses;
+END
+
+// Attribute used to make a custom editor support multi-object editing.
+CLASS CanEditMultipleObjects : System.Attribute
+END
+
+// Base class to derive custom Editors from. Use this to create your own custom inspectors and editors for your objects.
+CSRAW [StructLayout (LayoutKind.Sequential)]
+NONSEALED_CLASS Editor : ScriptableObject
+	// The object currently inspected by this editor.
+	CSRAW Object[] m_Targets;
+
+	CSRAW int    m_IsDirty;
+
+	CSRAW private int m_ReferenceTargetIndex = 0;
+
+	internal SerializedObject m_SerializedObject = null;
+	OptimizedGUIBlock m_OptimizedBlock;
+	internal InspectorMode m_InspectorMode = InspectorMode.Normal;
+	internal const float kLineHeight = 16;
+
+	CSRAW internal bool hideInspector = false;
+
+	CSRAW internal bool canEditMultipleObjects { get {
+		return GetType ().GetCustomAttributes (typeof (CanEditMultipleObjects), false).Length > 0;
+	} }
+	
+	/// *listonly*
+	CSRAW public static Editor CreateEditor (Object obj, Type editorType = null)
+	{
+		return CreateEditor (new Object[] {obj}, editorType);
+	}
+	
+	// Make a custom editor for /obj/ or /objects/.
+	CUSTOM static Editor CreateEditor (Object[] objects, Type editorType = null)
+	{
+		std::vector <PPtr<Object> > monoObjects;
+		MonoObjectArrayToPPtrVector(objects, monoObjects);
+		return Scripting::ScriptingWrapperFor(CreateInspectorMonoBehaviour(monoObjects, editorType, kNormalInspector, false));
+	}
+
+	// The object being inspected.
+	CSRAW public Object target { get { return m_Targets[referenceTargetIndex]; } }
+
+	// An array of all the object being inspected.
+	CSRAW public Object[] targets { get {
+		if (!m_AllowMultiObjectAccess)
+			Debug.LogError ("The targets array should not be used inside OnSceneGUI or OnPreviewGUI. Use the single target property instead.");
+		return m_Targets;
+	} }
+	CSRAW internal virtual int referenceTargetIndex
+	{
+		get { return Mathf.Clamp (m_ReferenceTargetIndex, 0, m_Targets.Length-1); }
+		// Modulus that works for negative numbers as well
+		set { m_ReferenceTargetIndex = (Math.Abs(value * m_Targets.Length) + value) % m_Targets.Length; }
+	}
+
+	CSRAW internal virtual string targetTitle { get {
+		if (m_Targets.Length == 1 || !m_AllowMultiObjectAccess)
+			return target.name;
+		else
+			return m_Targets.Length + " " + ObjectNames.NicifyVariableName (ObjectNames.GetClassName (target)) + "s";
+	} }
+
+	// A [[SerializedObject]] representing the object or objects being inspected.
+	CSRAW public SerializedObject serializedObject { get {
+		if (!m_AllowMultiObjectAccess)
+			Debug.LogError ("The serializedObject should not be used inside OnSceneGUI or OnPreviewGUI. Use the target property directly instead.");
+		return GetSerializedObjectInternal ();
+	} }
+
+	CSRAW internal virtual SerializedObject GetSerializedObjectInternal ()
+	{
+		if (m_SerializedObject == null)
+			m_SerializedObject = new SerializedObject (targets);
+		return m_SerializedObject;
+	}
+
+	private void CleanupPropertyEditor ()
+	{
+		if (m_OptimizedBlock != null)
+		{
+			m_OptimizedBlock.Dispose();
+			m_OptimizedBlock = null;
+		}
+		if (m_SerializedObject != null)
+		{
+			m_SerializedObject.Dispose();
+			m_SerializedObject = null;
+		}
+	}
+
+	private void OnDisableINTERNAL ()
+	{
+		CleanupPropertyEditor ();
+	}
+
+	
+	// Reload SerializedObject because flags etc might have changed.
+	internal void OnForceReloadInspector ()
+	{
+		if (m_SerializedObject != null)
+			m_SerializedObject.SetIsDifferentCacheDirty ();
+	}
+
+	internal bool GetOptimizedGUIBlockImplementation (bool isDirty, bool isVisible, out OptimizedGUIBlock block, out float height)
+	{
+		if (m_OptimizedBlock == null)
+			m_OptimizedBlock = new OptimizedGUIBlock();
+
+		block = m_OptimizedBlock;
+		if (!isVisible)
+		{
+			height = 0;
+			return true;
+		}
+
+		// Update serialized object representation
+		if (m_SerializedObject == null)
+			m_SerializedObject = new SerializedObject (targets);
+		else
+			m_SerializedObject.Update();
+		m_SerializedObject.inspectorMode = m_InspectorMode;
+
+		SerializedProperty property = m_SerializedObject.GetIterator();
+		// Allocate height for spacing above first control
+		height = EditorGUI.kControlVerticalSpacing;
+		bool expand = true;
+		while (property.NextVisible(expand))
+		{
+			// Allocate height for control plus spacing below it
+			height += EditorGUI.GetPropertyHeight (property, null, true) + EditorGUI.kControlVerticalSpacing;
+			expand = false;
+		}
+
+		// If no controls are shown, undo the spacing we started with.
+		if (height == EditorGUI.kControlVerticalSpacing)
+			height = 0;
+
+		return true;
+	}
+
+	internal bool OptimizedInspectorGUIImplementation (Rect contentRect)
+	{
+		SerializedProperty property = m_SerializedObject.GetIterator();
+
+		// Iterate over all properties
+		bool childrenAreExpanded = true;
+
+		bool wasEnabled = GUI.enabled;
+		contentRect.xMin += InspectorWindow.kInspectorPaddingLeft;
+		contentRect.xMax -= InspectorWindow.kInspectorPaddingRight;
+		contentRect.y += EditorGUI.kControlVerticalSpacing;
+
+		while (property.NextVisible(childrenAreExpanded))
+		{
+			contentRect.height = EditorGUI.GetPropertyHeight (property, null, false);
+            EditorGUI.indentLevel = property.depth;
+			childrenAreExpanded = EditorGUI.PropertyField (contentRect, property);
+			contentRect.y += contentRect.height + EditorGUI.kControlVerticalSpacing;
+		}
+		GUI.enabled = wasEnabled;
+
+		bool valuesChanged = m_SerializedObject.ApplyModifiedProperties ();
+
+		return valuesChanged;
+	}
+
+	protected internal static void DrawPropertiesExcluding (SerializedObject obj, params string[] propertyToExclude)
+	{
+		// Loop through properties and create one field (including children) for each top level property.
+		SerializedProperty property = obj.GetIterator ();
+		int excluded = 0;
+		bool expanded = true;
+		while (property.NextVisible (expanded))
+		{
+			expanded = false;
+			// This one needs special handling
+			if (excluded < propertyToExclude.Length && property.name == propertyToExclude[excluded])
+			{
+				excluded++;
+				continue;
+			}
+			EditorGUILayout.PropertyField (property, true);
+		}
+	}
+
+	// Draw the built-in inspector.
+	CSRAW public bool DrawDefaultInspector ()
+	{
+		return DoDrawDefaultInspector ();
+	}
+	// Implement this function to make a custom inspector.
+	public virtual void OnInspectorGUI ()
+	{
+		DrawDefaultInspector();
+	}
+
+	// Implement this function if you want your editor constantly repaint (every 33ms)
+	public virtual bool RequiresConstantRepaint ()
+	{
+		return false;
+	}
+
+	// Lets the Editor handle an event in the scene view.
+	CSNONE 	void OnSceneGUI ();
+
+	CSRAW internal void InternalSetTargets (Object[] t) { m_Targets = t; }
+	CSRAW internal void InternalSetHidden (bool hidden) { hideInspector = hidden; }
+
+	CSRAW internal virtual bool GetOptimizedGUIBlock (bool isDirty, bool isVisible, out OptimizedGUIBlock block, out float height) { block = null; height = -1; return false; }
+	CSRAW internal virtual bool OnOptimizedInspectorGUI (Rect contentRect) { Debug.LogError("Not supported"); return false; }
+	CSRAW internal bool isInspectorDirty { get { return m_IsDirty != 0; } set { m_IsDirty = value ? 1 : 0; } }
+
+
+	// Repaint any inspectors that shows this editor.
+	CSRAW public void Repaint () { InspectorWindow.RepaintAllInspectors (); }
+
+	// Override this method in subclasses if you implement OnPreviewGUI.
+	CSRAW public virtual bool HasPreviewGUI()
+	{
+		return false;
+	}
+
+	// Override this method if you want to change the label of the Preview area.
+	CSRAW public virtual GUIContent GetPreviewTitle ()
+	{
+		return null;
+	}
+
+	// Override this method if you want to render a static preview that shows.
+	CSRAW public virtual Texture2D RenderStaticPreview (string assetPath, Object[] subAssets, int width, int height)
+	{
+		return null;
+	}
+
+	// Implement to create your own custom preview. Custom previews are used in the preview area of the inspector, primary editor headers, and the object selector.
+	CSRAW public virtual void OnPreviewGUI(Rect r, GUIStyle background)
+	{
+		if (Event.current.type == EventType.Repaint)
+			background.Draw(r, false, false, false, false);
+		return;
+	}
+
+	// Implement to create your own interactive custom preview. Interactive custom previews are used in the preview area of the inspector and the object selector.
+	CSRAW public virtual void OnInteractivePreviewGUI(Rect r, GUIStyle background)
+	{
+		OnPreviewGUI (r, background);
+	}
+
+	// Override this method if you want to show custom controls in the preview header.
+	CSRAW public virtual void OnPreviewSettings()
+	{
+		return;
+	}
+
+	// Implement this method to show asset information on top of the asset preview.
+	CSRAW public virtual string GetInfoString()
+	{
+		return "";
+	}
+
+	CSRAW internal static bool m_AllowMultiObjectAccess = true;
+
+	// Implement this method to show a limited inspector for showing tweakable parameters in an Asset Store preview.
+	CSRAW internal virtual void OnAssetStoreInspectorGUI()
+	{
+	}
+END
+
+
+CSRAW }

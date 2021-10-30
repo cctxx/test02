@@ -1,0 +1,67 @@
+rule TerrainModule_ReportCpp
+{
+	return 
+		Runtime/Terrain/TerrainModule.jam
+
+		Runtime/Terrain/DetailDatabase.cpp
+		Runtime/Terrain/DetailDatabase.h
+		Runtime/Terrain/DetailRenderer.cpp
+		Runtime/Terrain/DetailRenderer.h
+		Runtime/Terrain/ImposterRenderTexture.cpp
+		Runtime/Terrain/ImposterRenderTexture.h
+		Runtime/Terrain/SplatDatabase.cpp
+		Runtime/Terrain/SplatDatabase.h
+		Runtime/Terrain/SplatMaterials.cpp
+		Runtime/Terrain/SplatMaterials.h
+		Runtime/Terrain/TerrainData.cpp
+		Runtime/Terrain/TerrainData.h
+		Runtime/Terrain/TerrainIndexGenerator.cpp
+		Runtime/Terrain/TerrainIndexGenerator.h
+		Runtime/Terrain/TerrainInstance.cpp
+		Runtime/Terrain/TerrainInstance.h
+		Runtime/Terrain/TerrainRenderer.cpp
+		Runtime/Terrain/TerrainRenderer.h
+		Runtime/Terrain/TerrainManager.cpp
+		Runtime/Terrain/TerrainManager.h
+		Runtime/Terrain/TerrainModuleRegistration.cpp
+		Runtime/Terrain/Tree.cpp
+		Runtime/Terrain/Tree.h
+		Runtime/Terrain/TreeDatabase.cpp
+		Runtime/Terrain/TreeDatabase.h
+		Runtime/Terrain/TreeRenderer.cpp
+		Runtime/Terrain/TreeRenderer.h
+		Runtime/Terrain/Heightmap.cpp
+		Runtime/Terrain/Heightmap.h
+		Runtime/Terrain/QuadTreeNodeRenderer.cpp
+		Runtime/Terrain/QuadTreeNodeRenderer.h
+	;
+}
+
+rule TerrainModule_ReportTxt
+{
+	return
+		Runtime/Terrain/ScriptBindings/TerrainDataBindings.txt
+		Runtime/Terrain/ScriptBindings/Terrains.txt
+		Runtime/Terrain/ScriptBindings/WindZoneBindings.txt
+	;
+}
+
+rule TerrainModule_ReportIncludes
+{
+	return 
+		External/PhysX/builds/SDKs/Foundation/include
+		External/PhysX/builds/SDKs/Physics/include
+		External/PhysX/builds/SDKs/PhysXLoader/include
+		Projects/PrecompiledHeaders/ 
+	;
+}
+
+rule TerrainModule_Init
+{
+	OverrideModule Terrain : GetModule_Cpp : byOverridingWithMethod : TerrainModule_ReportCpp ;
+	OverrideModule Terrain : GetModule_Txt : byOverridingWithMethod : TerrainModule_ReportTxt ;
+	OverrideModule Terrain : GetModule_Inc : byOverridingWithMethod : TerrainModule_ReportIncludes ;
+}
+
+
+#RegisterModule Terrain ;

@@ -1,0 +1,34 @@
+C++RAW
+#include "UnityPrefix.h"
+#include "Editor/Src/Animation/AnimatorUtility.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Animation/Animator.h"
+#include "Runtime/Graphics/Texture2D.h"
+#include "Runtime/Math/Rect.h"
+
+CSRAW
+using UnityEngine;
+
+namespace UnityEditorInternal
+{
+CLASS AnimatorUtility
+	CUSTOM static void GetRootBlendTreeChildWeights (Animator animator, int layerIndex, int stateHash, float[] weightArray)
+	{
+		AnimatorUtility::GetRootBlendTreeChildWeights (animator.GetReference(), layerIndex, stateHash, &Scripting::GetScriptingArrayElement<float> (weightArray, 0));
+	}
+	
+	CUSTOM static void CalculateRootBlendTreeChildWeights (Animator animator, int layerIndex, int stateHash, float[] weightArray, float blendX, float blendY)
+	{
+		AnimatorUtility::CalculateRootBlendTreeChildWeights (animator.GetReference(), layerIndex, stateHash, &Scripting::GetScriptingArrayElement<float> (weightArray, 0), blendX, blendY);
+	}
+	
+	CUSTOM static void CalculateBlendTexture (Animator animator, int layerIndex, int stateHash, Texture2D blendTexture, Texture2D[] weightTextures, Rect rect)
+	{
+		vector<Texture2D*> monoObjects;
+		MonoObjectArrayToVector(weightTextures, monoObjects);
+		AnimatorUtility::CalculateBlendTexture (animator.GetReference(), layerIndex, stateHash, blendTexture, monoObjects, rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
+	}
+END
+
+
+CSRAW }

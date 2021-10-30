@@ -1,0 +1,53 @@
+
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Mono/MonoUtility.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Mono/MonoScript.h"
+
+using namespace Unity;
+
+
+CSRAW
+
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+namespace UnityEditorInternal
+{
+
+//*undocumented*
+CLASS  AvatarSkeletonMask : Object 
+
+	// Creates a new skeleton mask
+	CUSTOM AvatarSkeletonMask ()
+	{
+		AvatarSkeletonMask* avatarSkeletonMask = NEW_OBJECT(AvatarSkeletonMask);
+		avatarSkeletonMask->Reset();
+		ConnectScriptingWrapperToObject (self.GetScriptingObject(), avatarSkeletonMask);
+		avatarSkeletonMask->AwakeFromLoad(kInstantiateOrCreateFromCodeAwakeFromLoad);
+	}
+	
+	// Number of bones in the skeleton
+	CUSTOM_PROP int count
+	{
+		return self->GetCount(); 
+	}
+	{
+		self->SetCount(value);
+	}
+	
+	CUSTOM string  GetPath(int index)					{ return scripting_string_new(self->GetPath(index));}
+	CUSTOM void   SetPath(int index, string path)		{ self->SetPath(index, path);}
+	CUSTOM float GetWeight(int index)					{ return self->GetWeight(index);}
+	CUSTOM void  SetWeight(int index, float weight)     { self->SetWeight(index, weight);}
+	
+END
+
+CSRAW }

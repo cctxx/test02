@@ -1,0 +1,42 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Mono/MonoUtility.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Mono/MonoScript.h"
+#include "Editor/Src/Animation/AvatarUtility.h"
+#include "Runtime/Animation/Avatar.h"
+#include "Runtime/Animation/Animator.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using UnityScript.Scripting;
+using UnityEditor;
+
+
+
+namespace UnityEditor
+{
+
+STRUCT internal TransformX
+    CSRAW public Vector3	position;
+    CSRAW public Quaternion rotation;
+    CSRAW public Vector3	scale;
+END
+
+CLASS internal AvatarUtility
+	
+	CUSTOM static void SetHumanPose(Animator animator, float[] dof) {
+		AvatarUtility::SetHumanPose(*animator, Scripting::GetScriptingArrayStart<float>(dof), GetScriptingArraySize(dof));
+	}
+
+	CUSTOM static void HumanGetColliderTransform(Avatar avatar, int index, TransformX boneX, out TransformX colliderX){
+		AvatarUtility::HumanGetColliderTransform(*avatar, index, boneX, *colliderX);
+	}
+	
+END
+
+CSRAW }

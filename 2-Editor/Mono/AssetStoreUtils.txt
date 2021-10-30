@@ -1,0 +1,397 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/Utility/CurlRequest.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Mono/MonoScript.h"
+#include "Runtime/Misc/PreloadManager.h"
+#include "Runtime/Utilities/File.h"
+#include "Runtime/Utilities/FileUtilities.h"
+#include "Runtime/Misc/AssetBundleUtility.h"
+#include "Editor/Src/PackageUtility.h"
+#include "Editor/Src/Utility/BuildPlayerUtility.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngineInternal;
+using UnityEditorInternal;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.IO;
+
+namespace UnityEditor
+{
+
+C++RAW
+
+class AssetStoreDownloadMessage;
+
+typedef std::set< PPtr<MonoBehaviour> > DownloadDelegates;
+typedef std::map< string, AssetStoreDownloadMessage* > DownloadsInProgress;
+static DownloadDelegates s_DownloadDelegates;
+static DownloadsInProgress s_DownloadsInProgress;
+
+
+class AssetStoreDownloadMessage: public CurlRequestMessage
+{
+private:
+	string m_Id;
+	string m_Key; 
+	string m_FinalPath;
+	int m_ResumeAdd; // Set to the length of the already downloaded data in case of resuming
+	int m_DoneDelegate;
+	
+	bool DecryptFile(const string& pathName, const string& finalPath,const string& key)
+	{
+
+		void* argumentList[3];
+		argumentList[0]=scripting_string_new(pathName);
+		argumentList[1]=scripting_string_new(finalPath);
+		argumentList[2]=scripting_string_new(key);
+		
+		MonoException* exception = NULL;
+		CallStaticMonoMethod("AssetStoreUtils","DecryptFile", argumentList, &exception);
+		if (exception)
+			Scripting::LogException(exception, 0);
+		else
+			MoveToTrash(pathName);
+		return exception == NULL;
+	}
+
+	void OnDownloadProgress(const string& status, size_t downloaded, size_t totalSize)
+	{
+		DownloadDelegates delegatesToRemove;
+
+		void* argumentList[4];
+		argumentList[0]=scripting_string_new(m_Id);
+		argumentList[1]=scripting_string_new(status);
+		argumentList[2]=&downloaded;
+		argumentList[3]=&totalSize;
+
+		for (DownloadDelegates::iterator i = s_DownloadDelegates.begin(); i != s_DownloadDelegates.end(); ++i)
+		{
+			MonoObject* instance = (*i)->GetInstance();
+			MonoMethod* method = NULL;
+			MonoClass* klass = NULL;
+			bool success = false;
+			if ( instance != NULL ) 
+			{
+				klass = (*i)->GetClass();
+				if ( klass != NULL )				
+				{
+					MonoMethodDesc* desc = mono_method_desc_new(":OnDownloadProgress(string,string,int,int)", false);
+					method = mono_method_desc_search_in_class( desc, klass);
+					if ( method != NULL )
+					{
+						MonoException* exception = 0;
+						MonoMethodSignature* sig = mono_method_signature (method);
+						int argCount = mono_signature_get_param_count (sig);
+						if ( argCount == 4 )
+						{
+							mono_runtime_invoke(method, instance, argumentList, &exception);
+							if (exception)
+								Scripting::LogException(exception, 0);
+							success = true;
+						}
+					}
+				}
+			}
+
+			if (! success )
+				delegatesToRemove.insert(*i);
+			
+		}
+		for (DownloadDelegates::iterator i = delegatesToRemove.begin(); i != delegatesToRemove.end(); ++i)
+			s_DownloadDelegates.erase(*i);
+
+		if (m_DoneDelegate && status != "connecting" && status != "downloading") 
+		{
+			MonoObject* delegate = mono_gchandle_get_target(m_DoneDelegate);
+			if(delegate)
+			{
+				void* argumentList[4];
+				argumentList[0] = scripting_string_new(m_Id);
+				argumentList[1] = scripting_string_new(status);
+				argumentList[2] = &downloaded;
+				argumentList[3] = &totalSize;
+
+				MonoException* exception;
+				mono_runtime_delegate_invoke(delegate, argumentList, &exception);
+				if(exception)
+					Scripting::LogException(exception, 0);
+			}
+
+			mono_gchandle_free(m_DoneDelegate);	
+			m_DoneDelegate = 0;
+		}
+	}
+	
+public:
+	AssetStoreDownloadMessage(const string& id, const string& url, const string& publisher, const string& category, const string& packageName, const string& key, const string& jsonData, bool resumeOK, MonoObject* doneDelegate)
+		: m_Id(id)
+		, m_Key(key)
+		, m_ResumeAdd(0)
+		, m_DoneDelegate(0)
+	{
+		m_ShouldAbortOnExit = true;
+		string baseDir = AppendPathName(GetUserAppDataFolder (), "Asset Store");
+		if ( ! publisher.empty() )
+			baseDir = AppendPathName(baseDir, publisher);
+		if ( ! category.empty() )
+			baseDir = AppendPathName(baseDir, category);
+		m_PathName = AppendPathName(baseDir, "." + packageName + "-" + m_Id + ".tmp");
+		string jsonPathName = m_PathName + ".json";
+		
+		m_FinalPath = AppendPathName(baseDir, packageName + ".unitypackage");
+		if ( IsPathCreated(m_PathName) )
+		{
+			if ( resumeOK )
+				m_ResumeAdd=GetFileLength(m_PathName);
+			else
+				DeleteFile(m_PathName);
+		}
+	
+		if ( doneDelegate )
+			m_DoneDelegate = mono_gchandle_new (doneDelegate, 0);
+	
+		m_Uri = url;
+		CreateDirectoryRecursive(baseDir);
+		WriteStringToFile(jsonData, jsonPathName, kNotAtomic, kFileFlagTemporary|kFileFlagDontIndex);
+		s_DownloadsInProgress[m_FinalPath] = this;
+	}
+
+	~AssetStoreDownloadMessage() 
+	{
+		if (m_DoneDelegate)
+			mono_gchandle_free(m_DoneDelegate);	
+	}
+
+	static bool CheckDownloadMessage(const string& id, const string& url, const string& publisher, const string& category, const string& packageName, const string& key, InputString& outJsonData)
+	{
+		string baseDir = AppendPathName(GetUserAppDataFolder (), "Asset Store");
+		if ( ! publisher.empty() )
+			baseDir = AppendPathName(baseDir, publisher);
+		if ( ! category.empty() )
+			baseDir = AppendPathName(baseDir, category);
+		string jsonPathName = AppendPathName(baseDir, "." + packageName + "-" + id + ".tmp.json");
+		string finalPath = AppendPathName(baseDir, packageName + ".unitypackage");
+		outJsonData=InputString();
+		if ( s_DownloadsInProgress.count(finalPath) > 0 )
+			return true;
+		if ( IsFileCreated( jsonPathName ) )
+			ReadStringFromFile(&outJsonData, jsonPathName);
+		return false;
+	}
+	
+	virtual void Done()
+	{
+		s_DownloadsInProgress.erase(m_FinalPath); 
+		string jsonPathName = m_PathName + ".json";
+		if ( m_Success ) 
+		{
+			if ( IsPathCreated(m_FinalPath) )
+				MoveToTrash(m_FinalPath);
+			if ( IsPathCreated(jsonPathName) )
+				DeleteFile(jsonPathName);
+			
+			if (m_Key != "")
+			{
+				if (! DecryptFile(m_PathName, m_FinalPath, m_Key) )
+				{
+					OnDownloadProgress("Error: Could not decrypt package file", 0, 0);
+					return;
+				}
+			}
+			else
+			{
+				if (! MoveFileOrDirectory(m_PathName, m_FinalPath) )
+				{
+					OnDownloadProgress("Error: Could not move package file to its final location", 0, 0);
+					return;
+				}
+			}
+			int finalSize = GetFileLength (m_FinalPath);
+			OnDownloadProgress("ok", finalSize, finalSize);
+		}
+		else 
+		{
+			// Don't delete the partial download when aborting	
+			if (m_Result == "Aborted Request")
+				OnDownloadProgress("aborted", 0, 0);
+			else
+			{
+				if ( IsPathCreated(m_PathName) )
+					DeleteFile(m_PathName);
+				if ( IsPathCreated(jsonPathName) )
+					DeleteFile(jsonPathName);
+
+				OnDownloadProgress("Error: "+m_Result, 0, 0);
+			}
+		}
+	}
+	
+	virtual void Progress(size_t fetched, size_t total)
+	{
+		OnDownloadProgress("downloading", m_ResumeAdd+fetched, m_ResumeAdd+total);
+	}
+	
+	virtual void Connecting()
+	{
+		OnDownloadProgress("connecting", 0, 1);
+	}
+};
+
+
+CLASS internal AssetStoreUtils
+
+CSRAW private const string kAssetStoreUrl = "https://shawarma.unity3d.com";
+
+CSRAW public delegate void DownloadDoneCallback(string package_id, string message, int bytes, int total);
+
+CUSTOM public static void Download(string id, string url, string[] destination, string key, string jsonData, bool resumeOK, DownloadDoneCallback doneCallback = null)
+{
+	int arrayLength = mono_array_length_safe(destination);
+	if (arrayLength != 3)
+		Scripting::RaiseMonoException("destination array must be 3 elements");
+		
+	string publisher = scripting_cpp_string_for(GetMonoArrayElement<MonoString*>(destination, 0));
+	string category =  scripting_cpp_string_for(GetMonoArrayElement<MonoString*>(destination, 1));
+	string packageName = scripting_cpp_string_for(GetMonoArrayElement<MonoString*>(destination, 2));
+
+	AssetStoreDownloadMessage *pMessage = new AssetStoreDownloadMessage(id, url, 
+		publisher, category, packageName, key, jsonData, resumeOK, doneCallback);
+	CurlRequestGet(pMessage, kCurlRequestGroupMulti);
+}
+
+CUSTOM public static string CheckDownload(string id, string url, string[] destination, string key)
+{
+	int arrayLength = mono_array_length_safe(destination);
+	if (arrayLength != 3)
+		Scripting::RaiseMonoException("destination array must be 3 elements");
+		
+	string publisher = scripting_cpp_string_for(GetMonoArrayElement<MonoString*>(destination, 0));
+	string category = scripting_cpp_string_for(GetMonoArrayElement<MonoString*>(destination, 1));
+	string packageName = scripting_cpp_string_for(GetMonoArrayElement<MonoString*>(destination, 2));
+
+	InputString result;
+	if( AssetStoreDownloadMessage::CheckDownloadMessage(id, url, publisher, category, packageName, key, result ))
+	{
+		return scripting_string_new("{\"in_progress\":true}");
+	}
+	
+	if ( result.empty() )
+		return scripting_string_new("{\"in_progress\":false}");
+	else
+		return scripting_string_new(std::string(result.c_str(), result.length()));
+}
+
+CSRAW private static void HexStringToByteArray(string hex, byte[] array, int offset)
+{
+	if (offset+array.Length*2 > hex.Length)
+		throw new ArgumentException("Hex string too short");
+	
+	for (int i = 0; i < array.Length; i++ )
+	{
+		string sub = hex.Substring(i*2+offset,2);
+		array[i] = byte.Parse( sub, System.Globalization.NumberStyles.HexNumber);
+	}
+	
+}
+
+CSRAW public static void DecryptFile(string inputFile, string outputFile, string keyIV)
+{
+
+	byte[] key = new byte[32];
+	byte[] iv = new byte[16];
+	HexStringToByteArray(keyIV, key, 0);
+	HexStringToByteArray(keyIV, iv, 64);
+
+	// Create or open the specified file. 
+	FileStream fStream = File.Open(inputFile, FileMode.Open);
+	FileStream oStream = File.Open(outputFile, FileMode.CreateNew);
+
+	// Create a new AES object.
+	AesManaged AesManagedAlg = new AesManaged();
+	AesManagedAlg.Key = key;
+	AesManagedAlg.IV = iv;
+	
+	// Create a CryptoStream using the FileStream 
+	// and the passed key and initialization vector (IV).
+	CryptoStream cStream = new CryptoStream(fStream, AesManagedAlg.CreateDecryptor(AesManagedAlg.Key, AesManagedAlg.IV), CryptoStreamMode.Read);
+
+	try
+	{
+		byte[] buffer = new byte[40960];
+		int count;
+		while( ( count = cStream.Read(buffer, 0, buffer.Length) ) > 0 )
+		{
+			//Debug.Log(string.Format("Writing {0} bytes to outputFile", count));
+			oStream.Write(buffer,0,count);
+		}
+	}
+	finally
+	{
+
+		// Close the streams and
+		// close the file.
+		cStream.Close();
+		fStream.Close();
+		oStream.Close();
+	}
+
+	return;
+	
+}
+
+CUSTOM public static void RegisterDownloadDelegate(ScriptableObject d)
+{
+	PPtr<MonoBehaviour> delegatePPtr = d;
+	s_DownloadDelegates.insert(delegatePPtr);
+}
+
+CUSTOM public static void UnRegisterDownloadDelegate(ScriptableObject d)
+{
+	PPtr<MonoBehaviour> delegatePPtr = d;
+	s_DownloadDelegates.erase(delegatePPtr);
+}
+
+CUSTOM public static string GetLoaderPath()
+{
+	const char* customLoader = getenv("UNITY_ASSETSTORE_LOADER");
+	if (customLoader)
+		return scripting_string_new( customLoader );
+	return scripting_string_new( AppendPathName (GetApplicationContentsPath (), "Resources/loader.html") );
+}
+
+CUSTOM public static void UpdatePreloading()
+{
+	GetPreloadManager().UpdatePreloading();
+}
+
+CSRAW public static string GetOfflinePath()
+{
+	return EditorApplication.applicationContentsPath + "/Resources/offline.html";
+}
+
+CSRAW public static string GetAssetStoreUrl ()
+{
+	return kAssetStoreUrl; 
+}
+
+CSRAW public static string GetAssetStoreSearchUrl ()
+{
+	return GetAssetStoreUrl ().Replace ("https", "http");   // Use use http (and not https) when searching because its faster
+}
+
+END
+
+CSRAW }

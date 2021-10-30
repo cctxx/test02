@@ -1,0 +1,81 @@
+
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Mono/MonoUtility.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Mono/MonoScript.h"
+#include "Editor/Src/Animation/AvatarMask.h"
+
+using namespace Unity;
+
+
+CSRAW
+
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+namespace UnityEditorInternal
+{
+
+//*undocumented*
+CLASS AvatarMask : Object
+
+	CUSTOM AvatarMask ()
+	{
+		AvatarMask* avatarBodyMask = NEW_OBJECT(AvatarMask);
+		avatarBodyMask->Reset();
+		Scripting::ConnectScriptingWrapperToObject (self.GetScriptingObject(), avatarBodyMask);
+		avatarBodyMask->AwakeFromLoad(kInstantiateOrCreateFromCodeAwakeFromLoad);
+	}
+	
+	CUSTOM_PROP		int		humanoidBodyPartCount								{ return self->GetBodyPartCount(); }
+	CUSTOM bool				GetHumanoidBodyPartActive(int index)				{ return self->GetBodyPart(index); }
+	CUSTOM void				SetHumanoidBodyPartActive(int index, bool value)	{ self->SetBodyPart(index,value); }		
+		
+	CUSTOM_PROP		int		transformCount										
+	{ 
+		return self->GetTransformCount(); 
+	} 
+	{
+		self->SetTransformCount(value);
+	}
+
+	CUSTOM			string	GetTransformPath(int index)							{ return scripting_string_new(self->GetTransformPath(index));}
+	CUSTOM			void	SetTransformPath(int index, string path)			{ self->SetTransformPath(index, path);}
+	CUSTOM			bool	GetTransformActive(int index)						{ return self->GetTransformWeight(index) > 0.5;}
+	CUSTOM			void	SetTransformActive(int index, bool value)			{ self->SetTransformWeight(index, value ? 1 : 0);}
+
+//	CUSTOM			void	CreateFromRootTransform(Transform root)				{}//
+
+	CUSTOM_PROP internal bool hasFeetIK { return self->HasFeetIK(); }
+
+	CSRAW public void Reset()
+	{
+		for(int i=0;i<humanoidBodyPartCount;i++)
+			SetHumanoidBodyPartActive(i, true);
+
+		transformCount = 0;
+	}
+
+	CSRAW public void Copy(AvatarMask other)
+	{
+		for(int i=0;i<humanoidBodyPartCount;i++)
+			SetHumanoidBodyPartActive(i, other.GetHumanoidBodyPartActive(i));
+
+		transformCount = other.transformCount;
+
+		for(int i=0;i<other.transformCount;i++)
+		{
+			SetTransformPath(i, other.GetTransformPath(i));
+			SetTransformActive(i, other.GetTransformActive(i));
+		}
+	}
+END
+
+CSRAW }

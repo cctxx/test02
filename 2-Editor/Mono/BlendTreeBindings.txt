@@ -1,0 +1,78 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/Animation/BlendTree.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Runtime/Scripting/Scripting.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+namespace UnityEditorInternal
+{
+
+
+ENUM public BlendTreeType
+
+	Simple = 0 ,
+	SimpleDirectional2D = 1,
+	FreeformDirectional2D = 2,
+	FreeformCartesian2D = 3
+
+END
+
+//*undocumented*
+CLASS public BlendTree : Motion
+
+
+	CSRAW private BlendTree() // prevent this ?
+	{
+		
+	}	
+		
+
+	CUSTOM_PROP string			blendParameter															{return scripting_string_new(self->GetBlendParameter());} {self->SetBlendParameter(value); }
+	CUSTOM_PROP string			blendParameterY															{return scripting_string_new(self->GetBlendParameterY());} {self->SetBlendParameterY(value); }
+	CUSTOM_PROP BlendTreeType	blendType																{return self->GetBlendType();} {return self->SetBlendType(value);}
+	
+	CUSTOM_PROP int				childCount																{return self->GetChildCount();}
+	CUSTOM void					RemoveChild(int index)													{return self->RemoveAtIndex(index);}
+
+	CUSTOM BlendTree			AddNewBlendTree()														{return Scripting::ScriptingWrapperFor(self->AddNewBlendTree());}
+	CUSTOM void					AddAnimationClip(AnimationClip clip)									{self->AddMotion(clip);}	
+	CUSTOM Motion				GetMotion(int index)													{return Scripting::ScriptingWrapperFor(self->GetMotion(index));}	
+							
+	CUSTOM Vector2				GetChildPosition(int index)												{return self->GetChildPosition(index);}
+	CUSTOM void					SetChildPosition(int index, Vector2 val)								{return self->SetChildPosition(index,val);}
+	
+	CUSTOM void					SortChildren()															{self->SortChildren();}
+	CUSTOM float				GetChildThreshold(int index)											{return self->GetChildTreshold(index);}
+	CUSTOM void					SetChildThreshold(int index, float val)									{return self->SetChildTreshold(index,val);}
+	AUTO_PROP bool automaticThresholds GetUseAutomaticThresholds SetUseAutomaticThresholds 
+	AUTO_PROP float minThreshold GetMinThreshold SetMinThreshold
+	AUTO_PROP float maxThreshold GetMaxThreshold SetMaxThreshold
+	
+	CUSTOM float				GetChildTimeScale(int index)											{return self->GetChildTimeScale(index);}
+	CUSTOM void					SetChildTimeScale(int index, float val)									{return self->SetChildTimeScale(index,val);}
+							
+	
+	CUSTOM_PROP internal int	recursiveBlendParameterCount											{return self->GetRecursiveBlendParameterCount();}
+	CUSTOM internal string		GetRecursiveBlendParameter(int index)									{return scripting_string_new(self->GetRecursiveBlendParameter(index));}
+	CUSTOM internal float		GetRecursiveBlendParameterMin(int index)								{return self->GetRecursiveBlendParameterMin(index);}
+	CUSTOM internal float		GetRecursiveBlendParameterMax(int index)								{return self->GetRecursiveBlendParameterMax(index);}				
+		
+	CUSTOM internal void		SetInputBlendValue(string blendValueName, float value)					{self->SetInputBlendValue(blendValueName,value);}
+	CUSTOM internal float		GetInputBlendValue(string blendValueName)								{return self->GetInputBlendValue(blendValueName);}
+
+	CUSTOM internal void		SetMotion(int index, Motion motion)										{self->SetMotion(index,motion);}
+	CUSTOM internal AnimationClip[]      GetAnimationClipsFlattened()									{return CreateScriptingArrayFromUnityObjects(self->GetAnimationClips(), ClassID(AnimationClip));}
+					
+END
+
+
+CSRAW }

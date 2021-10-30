@@ -1,0 +1,327 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/BuildPipeline/BuildTargetPlatformSpecific.h"
+#include "Editor/Src/Utility/BuildPlayerUtility.h"
+#include "Editor/Src/LicenseInfo.h"
+#include "Editor/Src/AssetPipeline/MonoCompile.h"
+#include "Editor/Src/Utility/BuildPlayerHelpers.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+
+using namespace std;
+
+CSRAW
+using System;
+using System.Collections;
+using System.Reflection;
+using UnityEngine;
+using Object=UnityEngine.Object;
+
+
+namespace UnityEditor
+{
+
+
+// Building options. Multiple options can be combined together.
+CSRAW [System.Flags]
+ENUM BuildOptions
+	// Perform the specified build without any special settings or extra tasks.
+	None = 0,
+
+	// Build a development version of the standalone player.
+	Development = 1,
+
+	// Run the built player.
+	AutoRunPlayer = 4,
+
+	// Show the built player.
+	ShowBuiltPlayer = 8,
+
+	// Build a compressed asset bundle that contains streamed scenes loadable with the WWW class.
+	BuildAdditionalStreamedScenes = 16,
+
+	// Do not overwrite player directory, but accept user's modifications.
+	AcceptExternalModificationsToPlayer = 32,
+
+	//*undocumented*
+	InstallInBuildFolder = 64,
+
+	// Copy UnityObject.js alongside Web Player so it wouldn't have to be downloaded from internet.
+	WebPlayerOfflineDeployment = 128,
+
+	// Start the player with a connection to the profiler in the editor
+	ConnectWithProfiler = 256,
+
+	// Allow script debuggers to attach to the player remotely.
+	AllowDebugging = 512,
+
+	// Symlink runtime libraries when generating iOS XCode project. (Faster iteration time).
+	SymlinkLibraries = 1024,
+
+	// Don't compress the data when creating the asset bundle.
+	UncompressedAssetBundle = 2048,
+
+	OBSOLETE warning Use BuildOptions.Development instead
+	StripDebugSymbols = 0,
+	OBSOLETE warning Texture Compression is now always enabled
+	CompressTextures = 0,
+
+	//*undocumented*
+	ConnectToHost = 4096,
+
+	// Publish Web Player online
+	DeployOnline = 8192,
+
+	// Linux Headless Mode
+	EnableHeadlessMode = 16384,
+END
+
+
+// Asset Bundle building options.
+CSRAW [System.Flags]
+ENUM BuildAssetBundleOptions
+
+	// Includes all dependencies.
+	CollectDependencies = 1048576,//1 << 20
+
+	// Forces inclusion of the entire asset.
+	CompleteAssets = 2097152, // 1 << 21
+
+	// Do not include type information within the AssetBundle.
+	DisableWriteTypeTree = 67108864, // 1 << 26
+
+	// Builds an asset bundle using a hash for the id of the object stored in the asset bundle.
+	DeterministicAssetBundle = 268435456, // 1 << 28
+
+	// Don't compress the data when creating the asset bundle.
+	UncompressedAssetBundle = 2048 // 1 << 11
+END
+
+
+// Lets you programmatically build players or AssetBundles which can be loaded from the web.
+CLASS BuildPipeline
+	CUSTOM internal static BuildTargetGroup GetBuildTargetGroup(BuildTarget platform)
+	{
+		return GetBuildTargetGroup(platform);
+	}
+
+	CUSTOM internal static string GetBuildTargetGroupDisplayName (BuildTargetGroup targetPlatformGroup)
+	{
+		return scripting_string_new(GetBuildTargetGroupDisplayName(targetPlatformGroup));
+	}
+
+	// Lets you manage cross-references and dependencies between different asset bundles and player builds.
+	CUSTOM static void PushAssetDependencies () { PushAssetDependencies(); }
+
+
+	// Lets you manage cross-references and dependencies between different asset bundles and player builds.
+	CUSTOM static void PopAssetDependencies () { PopAssetDependencies(); }
+
+
+	CSRAW private static void LogBuildExceptionAndExit (string buildFunctionName, System.Exception exception)
+	{
+		Debug.LogError (string.Format ("Internal Error in {0}:", buildFunctionName));
+		Debug.LogException (exception);
+		EditorApplication.Exit (1);
+	}
+
+
+	// Builds a player __(Unity Pro only)__.
+
+	CSRAW public static string BuildPlayer (string[] levels, string locationPathName, BuildTarget target, BuildOptions options)
+	{
+		try
+		{
+			uint crc;
+			return BuildPlayerInternal(levels, locationPathName, target, options, out crc);
+		}
+		catch (System.Exception exception)
+		{
+			// In some case BuildPlayer might let a null reference exception fall through. Prevent data loss by just exiting.
+			LogBuildExceptionAndExit ("BuildPipeline.BuildPlayer", exception);
+			return "";
+		}
+	}
+
+	
+	// Builds one or more scenes and all their dependencies into a compressed asset bundle.
+
+
+	CSRAW public static string BuildStreamedSceneAssetBundle (string[] levels, string locationPath, BuildTarget target, BuildOptions options = 0)
+	{
+		return BuildPlayer (levels, locationPath, target, options | BuildOptions.BuildAdditionalStreamedScenes);
+	}
+
+	CSRAW public static string BuildStreamedSceneAssetBundle (string[] levels, string locationPath, BuildTarget target, out uint crc, BuildOptions options = 0)
+	{
+		crc = 0;
+		try
+		{
+			return BuildPlayerInternal(levels, locationPath, target, options | BuildOptions.BuildAdditionalStreamedScenes, out crc);
+		}
+		catch (System.Exception exception)
+		{
+			// In some case BuildPlayer might let a null reference exception fall through. Prevent data loss by just exiting.
+			LogBuildExceptionAndExit ("BuildPipeline.BuildStreamedSceneAssetBundle", exception);
+			return "";
+		}
+	}
+
+	CSRAW private static string BuildPlayerInternal (string[] levels, string locationPathName, BuildTarget target, BuildOptions options, out uint crc)
+	{
+		crc = 0;
+		if (UnityEditorInternal.InternalEditorUtility.HasPro ())
+		{
+			return BuildPlayerInternalNoCheck (levels, locationPathName, target, options, false, out crc);
+		}
+		else
+		{
+			Debug.LogError("Building Player from editor scripts requires Unity PRO");
+			return "Building Player from editor scripts requires Unity PRO";
+		}
+	}
+
+	// Is a player currently building? 
+	CUSTOM_PROP static bool isBuildingPlayer { return IsBuildingPlayer(); }
+
+	// Just like BuildPlayer, but does not check for Pro license. Used from build player dialog.
+	CUSTOM internal static string BuildPlayerInternalNoCheck (string[] levels, string locationPathName, BuildTarget target, BuildOptions options, bool delayToAfterScriptReload, out uint crc)
+	{
+		vector<UnityStr> paths;
+		StringMonoArrayToVector(levels, paths);
+
+		BuildPlayerSetup setup;
+		setup.levels = paths;
+		setup.path = locationPathName;
+		setup.platform = target;
+		setup.options = options;
+		setup.outCRC = crc;
+
+		UnityStr result;
+		if (!delayToAfterScriptReload)
+		{
+			// Build right away.
+			result = BuildPlayer (setup);
+		}
+		else
+		{
+			// Build after reload.  In this case, the error return string
+			// becomes meaningless.
+			BuildPlayerAfterNextScriptReload (setup);
+		}
+
+		return scripting_string_new (result);
+	}
+
+	// Builds an asset bundle __(Unity Pro only)__.
+	CSRAW public static bool BuildAssetBundle (Object mainAsset, Object[] assets, string pathName, BuildAssetBundleOptions assetBundleOptions = BuildAssetBundleOptions.CollectDependencies | BuildAssetBundleOptions.CompleteAssets, BuildTarget targetPlatform = BuildTarget.WebPlayer)
+	{
+		uint crc;
+		return BuildAssetBundle (mainAsset, assets, pathName, out crc, assetBundleOptions, targetPlatform);
+	}
+
+	CSRAW public static bool BuildAssetBundle (Object mainAsset, Object[] assets, string pathName, out uint crc, BuildAssetBundleOptions assetBundleOptions = BuildAssetBundleOptions.CollectDependencies | BuildAssetBundleOptions.CompleteAssets, BuildTarget targetPlatform = BuildTarget.WebPlayer)
+	{
+		crc = 0;
+		try
+		{
+			return BuildAssetBundleInternal(mainAsset, assets, null, pathName, assetBundleOptions, targetPlatform, out crc);
+		}
+		catch (System.Exception exception)
+		{
+			LogBuildExceptionAndExit ("BuildPipeline.BuildAssetBundle", exception);
+			return false;
+		}
+	}
+
+	// Builds an asset bundle, with custom names for the assets __(Unity Pro only)__.
+	CSRAW public static bool BuildAssetBundleExplicitAssetNames (Object[] assets, string[] assetNames, string pathName, BuildAssetBundleOptions assetBundleOptions = BuildAssetBundleOptions.CollectDependencies | BuildAssetBundleOptions.CompleteAssets, BuildTarget targetPlatform = BuildTarget.WebPlayer)
+	{
+		uint crc;
+		return BuildAssetBundleExplicitAssetNames (assets, assetNames, pathName, out crc, assetBundleOptions, targetPlatform);
+	}
+
+	// Builds an asset bundle, with custom names for the assets __(Unity Pro only)__.
+	CSRAW public static bool BuildAssetBundleExplicitAssetNames (Object[] assets, string[] assetNames, string pathName, out uint crc, BuildAssetBundleOptions assetBundleOptions = BuildAssetBundleOptions.CollectDependencies | BuildAssetBundleOptions.CompleteAssets, BuildTarget targetPlatform = BuildTarget.WebPlayer)
+	{
+		crc = 0;
+		try
+		{
+			return BuildAssetBundleInternal(null, assets, assetNames, pathName, assetBundleOptions, targetPlatform, out crc);
+		}
+		catch (System.Exception exception)
+		{
+			LogBuildExceptionAndExit ("BuildPipeline.BuildAssetBundleExplicitAssetNames", exception);
+			return false;
+		}
+	}
+
+	CUSTOM private static bool BuildAssetBundleInternal (Object mainAsset, Object[] assets, string[] assetNames, string pathName, BuildAssetBundleOptions assetBundleOptions, BuildTarget targetPlatform, out uint crc)
+	{
+		vector<PPtr<Object> > objects;
+		if (assets != NULL)
+			MonoObjectArrayToPPtrVector(assets, objects);
+		vector<string> cAssetNames;
+		if (assetNames != NULL)
+			StringMonoArrayToVector(assetNames, cAssetNames);
+
+		string error = BuildWebAssetBundle(mainAsset, objects, cAssetNames.empty() ? NULL : &cAssetNames, pathName, targetPlatform, assetBundleOptions, crc);
+		if (!error.empty())
+			ErrorString(error);
+		return error.empty();
+	}
+
+	CUSTOM internal static bool LicenseCheck (BuildTarget target)
+	{
+		return BuildPlayerLicenseCheck(target);
+	}
+
+	CUSTOM internal static bool IsBuildTargetSupported (BuildTarget target)
+	{
+		return IsBuildTargetSupported(target);
+	}
+
+	CUSTOM internal static string GetBuildTargetAdvancedLicenseName (BuildTarget target)
+	{
+		return scripting_string_new(GetBuildTargetAdvancedLicenseName(target));
+	}
+
+	CUSTOM internal static string GetPlaybackEngineDirectory (BuildTarget target, BuildOptions options)
+	{
+		return scripting_string_new(GetPlaybackEngineDirectory(target, options, false));
+	}
+
+	CUSTOM internal static string GetBuildToolsDirectory (BuildTarget target)
+	{
+		return scripting_string_new(GetBuildToolsDirectory(target));
+	}
+
+	CUSTOM internal static string GetMonoBinDirectory (BuildTarget target)
+	{
+		return scripting_string_new(GetMonoBinDirectory(target));
+	}
+
+	CUSTOM internal static string GetMonoLibDirectory (BuildTarget target)
+	{
+		return scripting_string_new(GetMonoLibDirectory(target));
+	}
+
+	CUSTOM internal static string GetMonoProfileLibDirectory (BuildTarget target, string profile)
+	{
+		return scripting_string_new(GetMonoLibDirectory(target, profile));
+	}
+
+	CUSTOM internal static string GetBuildTargetGroupName (BuildTarget target)
+	{
+		return scripting_string_new(GetBuildTargetGroupName(target));
+	}
+
+	CUSTOM internal static bool IsUnityScriptEvalSupported (BuildTarget target)
+	{
+		return IsUnityScriptEvalSupported(target);
+	}
+
+END
+
+
+CSRAW }

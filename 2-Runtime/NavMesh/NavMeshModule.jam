@@ -1,0 +1,114 @@
+rule NavMeshModule_ReportCpp
+{
+	local navMeshSources =
+		NavMeshModule.jam
+		
+		DynamicMeshTests.cpp
+		DynamicMesh.cpp
+		DynamicMesh.h
+		HeightMeshQuery.cpp
+		HeightMeshQuery.h
+		HeightmapData.h
+		NavMesh.cpp
+		NavMesh.h
+		NavMeshAgent.cpp
+		NavMeshAgent.h
+		NavMeshCarving.cpp
+		NavMeshCarving.h
+		NavMeshTileCarving.cpp
+		NavMeshTileCarving.h
+		NavMeshTileConversion.cpp
+		NavMeshTileConversion.h
+		NavMeshLayers.cpp
+		NavMeshLayers.h
+		NavigationModuleRegistration.cpp
+		NavMeshManager.cpp
+		NavMeshManager.h
+		NavMeshObstacle.cpp
+		NavMeshObstacle.h
+		NavMeshPath.cpp
+		NavMeshPath.h
+		NavMeshProfiler.h
+		NavMeshSettings.cpp
+		NavMeshSettings.h
+		NavMeshTypes.h
+		OffMeshLink.cpp
+		OffMeshLink.h
+	;
+
+	local detourSources =
+		Detour/Include/DetourAlloc.h
+		Detour/Include/DetourAssert.h
+		Detour/Include/DetourCommon.h
+		Detour/Include/DetourContext.h
+		Detour/Include/DetourDynamicLink.h
+		Detour/Include/DetourFeatures.h
+		Detour/Include/DetourNavMesh.h
+		Detour/Include/DetourNavMeshBuilder.h
+		Detour/Include/DetourNavMeshQuery.h
+		Detour/Include/DetourNearestPolyQuery.h
+		Detour/Include/DetourNode.h
+		Detour/Include/DetourQueryFilter.h
+		Detour/Include/DetourReference.h
+		Detour/Include/DetourSwapEndian.h
+		Detour/Source/DetourAlloc.cpp
+		Detour/Source/DetourCommon.cpp
+		Detour/Source/DetourNavMesh.cpp
+		Detour/Source/DetourNavMeshBuilder.cpp
+		Detour/Source/DetourNavMeshQuery.cpp
+		Detour/Source/DetourNearestPolyQuery.cpp
+		Detour/Source/DetourNode.cpp
+		Detour/Source/DetourSwapEndian.cpp
+		DetourCrowd/Include/DetourCrowd.h
+		DetourCrowd/Include/DetourCrowdUpdate.h
+		DetourCrowd/Include/DetourCrowdTypes.h
+		DetourCrowd/Include/DetourLocalBoundary.h
+		DetourCrowd/Include/DetourObstacleAvoidance.h
+		DetourCrowd/Include/DetourOccupied.h
+		DetourCrowd/Include/DetourPathCorridor.h
+		DetourCrowd/Include/DetourPathQueue.h
+		DetourCrowd/Include/DetourProximityGrid.h
+		DetourCrowd/Source/DetourCrowd.cpp
+		DetourCrowd/Source/DetourCrowdUpdate.cpp
+		DetourCrowd/Source/DetourLocalBoundary.cpp
+		DetourCrowd/Source/DetourObstacleAvoidance.cpp
+		DetourCrowd/Source/DetourOccupied.cpp
+		DetourCrowd/Source/DetourPathCorridor.cpp
+		DetourCrowd/Source/DetourPathQueue.cpp
+		DetourCrowd/Source/DetourProximityGrid.cpp
+	;
+
+	local modulesources =
+		Runtime/NavMesh/$(navMeshSources)
+		External/Recast/$(detourSources)
+	;
+	
+	return $(modulesources) ;
+}
+
+rule NavMeshModule_ReportTxt
+{
+	return
+		Runtime/NavMesh/ScriptBindings/NavMeshAgentBindings.txt
+		Runtime/NavMesh/ScriptBindings/NavMeshBindings.txt
+		Runtime/NavMesh/ScriptBindings/NavMeshPathBindings.txt
+		Runtime/NavMesh/ScriptBindings/NavMeshObstacleBindings.txt
+	;
+}
+
+rule NavMeshModule_ReportIncludes
+{
+	return 
+		External/Recast/Detour/Include
+		External/Recast/DetourCrowd/include
+	;
+}
+
+rule NavMeshModule_Init
+{
+	OverrideModule NavMesh : GetModule_Cpp : byOverridingWithMethod : NavMeshModule_ReportCpp ;
+	OverrideModule NavMesh : GetModule_Txt : byOverridingWithMethod : NavMeshModule_ReportTxt ;
+	OverrideModule NavMesh : GetModule_Inc : byOverridingWithMethod : NavMeshModule_ReportIncludes ;
+}
+
+#RegisterModule NavMesh ;

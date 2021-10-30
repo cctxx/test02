@@ -1,0 +1,1954 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Platform/Interface/EditorWindows.h"
+#include "Runtime/Scripting/Scripting.h"
+#include "Runtime/Scripting/ScriptingObjectWithIntPtrField.h"
+
+CSRAW
+using UnityEngine;
+using UnityEditor;
+using System.Collections;
+using System.Linq;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
+using IntPtr = System.IntPtr;
+namespace UnityEditor
+{
+
+// Derive from this class to create an editor window.
+NONSEALED_CLASS EditorWindow : ScriptableObject
+	
+	CSRAW
+	
+	[SerializeField]
+	[HideInInspector]
+	bool m_AutoRepaintOnSceneChange;
+
+	[SerializeField]
+	[HideInInspector]
+	Vector2 m_MinSize = new Vector2 (100, 100);
+
+	[SerializeField]
+	[HideInInspector]
+	Vector2 m_MaxSize = new Vector2 (4000, 4000);
+
+	[SerializeField]
+	[HideInInspector]
+	internal string m_Title;
+
+	[SerializeField]
+	[HideInInspector]
+	int m_DepthBufferBits = 0;
+
+	[SerializeField]
+	[HideInInspector]
+	int m_AntiAlias = 0;
+
+	[SerializeField]
+	[HideInInspector]
+	internal Rect m_Pos = new Rect (0,0,320,240);
+
+
+	[System.NonSerialized]
+	private GUIContent m_CachedTitleContent;
+
+	Rect m_GameViewRect;
+	bool m_DontClearBackground;
+	bool m_WantsMouseMove;
+
+	// Dockarea we're inside.
+	[System.NonSerialized]
+	internal HostView m_Parent;
+	
+	// Overlay a notification message over the window.
+	const double kWarningFadeoutWait = 4;
+	const double kWarningFadeoutTime = 1;
+	
+	internal GUIContent m_Notification = null;
+	Vector2 m_NotificationSize;
+	internal float m_FadeoutTime = 0;
+	
+	// Mark the beginning area of all popup windows.
+	
+	CSRAW public void BeginWindows () 
+	{
+		EditorGUIInternal.BeginWindowsForward (1, GetInstanceID ());
+	}
+	
+	// Close a window group started with EditorWindow::ref::BeginWindows	
+	
+	CSRAW public void EndWindows () 
+	{
+		GUI.EndWindows ();
+	}
+
+	internal virtual void OnResized () 	{}
+
+	// Does the GUI in this editor window want MouseMove events?
+	CSRAW public bool wantsMouseMove { get { return m_WantsMouseMove; }
+		set {
+			m_WantsMouseMove = value;
+			MakeParentsSettingsMatchMe ();
+		}
+	}
+	
+	internal void CheckForWindowRepaint () 
+	{
+		double time = EditorApplication.timeSinceStartup;
+		if (time < m_FadeoutTime)
+			return;
+		if (time > m_FadeoutTime + kWarningFadeoutTime)
+		{
+			RemoveNotification ();
+			return;
+		}
+		Repaint ();
+	}
+	
+	// Show a notification message.
+	public void ShowNotification (GUIContent notification) 
+	{
+		m_Notification = new GUIContent (notification);
+		EditorStyles.notificationText.CalcMinMaxWidth (m_Notification, out m_NotificationSize.y, out m_NotificationSize.x);
+		m_NotificationSize.y = EditorStyles.notificationText.CalcHeight (m_Notification, m_NotificationSize.x);
+		if (m_FadeoutTime == 0)
+			EditorApplication.update += CheckForWindowRepaint;
+		m_FadeoutTime = (float)(EditorApplication.timeSinceStartup + kWarningFadeoutWait);
+	}
+	
+	// Stop showing notification message.
+	public void RemoveNotification () 
+	{
+		if (m_FadeoutTime == 0)
+			return;
+		EditorApplication.update -= CheckForWindowRepaint;
+		m_Notification = null;
+		m_FadeoutTime = 0;
+	}
+
+	internal void DrawNotification () 
+	{
+		Vector2 warningSize = m_NotificationSize;
+		float targetWidth = position.width - EditorStyles.notificationText.margin.horizontal;
+		float targetHeight = position.height - EditorStyles.notificationText.margin.vertical - 20;
+		// See if we can fit horizontally. If not, rescale down.
+		if (targetWidth < m_NotificationSize.x) {
+			float scale = targetWidth / m_NotificationSize.x;
+			warningSize.x *= scale;
+			
+			warningSize.y = EditorStyles.notificationText.CalcHeight (m_Notification, warningSize.x);			
+		}
+
+		if (warningSize.y > targetHeight)
+			warningSize.y = targetHeight;
+
+		Rect r = new Rect ((position.width - warningSize.x) * .5f, 20 + (position.height - 20 - warningSize.y)* .7f, warningSize.x, warningSize.y);
+		double time = EditorApplication.timeSinceStartup;
+		if (time > m_FadeoutTime)
+			GUI.color = new Color (1,1,1, 1 - (float)((time - m_FadeoutTime) / kWarningFadeoutTime));
+		GUI.Label (r, GUIContent.none, EditorStyles.notificationBackground);
+		EditorGUI.DoDropShadowLabel (r, m_Notification, EditorStyles.notificationText, .3f);
+	}
+	
+	CSRAW internal bool dontClearBackground { get { return m_DontClearBackground; }
+		set {
+			m_DontClearBackground = value;
+			if (m_Parent && m_Parent.actualView == this)
+				m_Parent.backgroundValid = false;
+		}
+	}
+	
+	
+	// Does the window automatically repaint whenever the scene has changed?
+	CSRAW public bool autoRepaintOnSceneChange {  get { return m_AutoRepaintOnSceneChange; }
+		set { 
+			m_AutoRepaintOnSceneChange = value; 
+			MakeParentsSettingsMatchMe ();
+		}
+	}
+	
+	CSRAW public bool maximized 
+	{ 
+		get { return WindowLayout.IsMaximized (this); } 
+		set { 
+			bool current = WindowLayout.IsMaximized (this); 
+			if (value != current)
+			{
+				if (value)
+					WindowLayout.Maximize (this);
+				else
+					WindowLayout.Unmaximize (this);
+			}
+		}
+	}
+	
+	CSRAW internal bool hasFocus { get { return m_Parent && m_Parent.actualView == this; } }
+
+	CSRAW internal bool docked { get { return m_Parent != null && m_Parent.window != null && !m_Parent.window.IsNotDocked(); } }
+
+	
+	// The EditorWindow which currently has keyboard focus (RO)
+	CSRAW static public EditorWindow focusedWindow { get {
+		HostView view = GUIView.focusedView as HostView;
+		if (view != null)
+		{	
+			return view.actualView;
+		}
+		else
+		{
+			return null;
+		}
+	} }
+
+	// The EditorWindow currently under the mouse cursor (RO)
+	CSRAW static public EditorWindow mouseOverWindow { get {
+		HostView view = GUIView.mouseOverView as HostView;
+		if (view != null)
+		{	
+			return view.actualView;
+		}
+		else
+		{
+			return null;
+		}
+	} }
+	
+
+	CSRAW internal int GetNumTabs ()
+	{
+		DockArea da = m_Parent as DockArea;
+		if (da)
+		{
+			return da.m_Panes.Count;
+		}
+		return 0;
+	}
+
+	CSRAW internal bool ShowNextTabIfPossible ()
+	{
+		DockArea da = m_Parent as DockArea;
+		if (da)
+		{
+			int idx = da.m_Panes.IndexOf (this);
+			idx = (idx + 1) % da.m_Panes.Count;
+			if (da.selected != idx)
+			{
+				da.selected = idx;
+				da.Repaint ();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	
+	CSRAW public void ShowTab ()
+	{
+		DockArea da = m_Parent as DockArea;
+		if (da)
+		{
+			int idx = da.m_Panes.IndexOf (this);
+			if (da.selected != idx)
+				da.selected = idx;
+		}
+		
+		Repaint ();
+	}
+	
+	
+	// Moves keyboard focus to this EditorWindow.
+	CSRAW public void Focus ()
+	{
+		if (m_Parent)
+		{
+			ShowTab();
+			m_Parent.Focus();
+		}
+	}
+
+	CSRAW internal void MakeParentsSettingsMatchMe () {
+		if (!m_Parent || m_Parent.actualView != this) 
+			return;
+		m_Parent.autoRepaintOnSceneChange = m_AutoRepaintOnSceneChange;
+		bool parentChanged = (m_Parent.antiAlias != m_AntiAlias || m_Parent.depthBufferBits != m_DepthBufferBits);
+		m_Parent.antiAlias = m_AntiAlias;
+		m_Parent.depthBufferBits = m_DepthBufferBits;
+		m_Parent.SetInternalGameViewRect(m_GameViewRect);
+		m_Parent.wantsMouseMove = m_WantsMouseMove;
+		Vector2 parentBorderSizes = new Vector2 (m_Parent.borderSize.left + m_Parent.borderSize.right, m_Parent.borderSize.top + m_Parent.borderSize.bottom);
+		m_Parent.SetMinMaxSizes (minSize + parentBorderSizes, maxSize + parentBorderSizes);
+		if (parentChanged)
+			m_Parent.RecreateContext();
+	}
+	
+	// Show the EditorWindow as a floating utility window.
+	CSRAW public void ShowUtility () {
+		ShowWithMode(ShowMode.Utility);
+	}
+
+	// Used for popup style windows. 
+	CSRAW public void ShowPopup () {
+		if (m_Parent == null) {
+		
+			ContainerWindow cw = ScriptableObject.CreateInstance<ContainerWindow> ();
+			cw.title = title;
+			HostView host = ScriptableObject.CreateInstance<HostView>();
+			host.actualView = this;
+			
+			Rect r = m_Parent.borderSize.Add (new Rect (position.x, position.y, position.width, position.height));
+			// Order is important here: first set rect of container, then assign main view, then apply various settings, then show.
+			// Otherwise the rect won't be set until first resize happens.
+			cw.position = r;
+			cw.mainView = host;
+			MakeParentsSettingsMatchMe();
+			cw.ShowPopup ();
+		}
+	}
+	
+	
+	CSRAW internal void ShowWithMode (ShowMode mode) {
+		if (m_Parent == null) {
+			SavedGUIState oldState = SavedGUIState.Create ();
+		
+			ContainerWindow cw = ScriptableObject.CreateInstance<ContainerWindow> ();
+			cw.title = title;
+			HostView host = ScriptableObject.CreateInstance<HostView>();
+			host.actualView = this;
+						
+			Rect r = m_Parent.borderSize.Add (new Rect (position.x, position.y, position.width, position.height));
+			// Order is important here: first set rect of container, then assign main view, then apply various settings, then show.
+			// Otherwise the rect won't be set until first resize happens.
+			cw.position = r;
+			cw.mainView = host;
+			MakeParentsSettingsMatchMe();
+			cw.Show (mode, true, false);
+			
+			oldState.ApplyAndForget();
+		}
+	}
+
+	// Show window with dropdown behaviour (e.g. window is closed when it loses focus) and having
+	public void ShowAsDropDown (Rect buttonRect, Vector2 windowSize)
+	{
+		ShowAsDropDown (buttonRect, windowSize, null);
+	}
+
+	// Show as drop down list with custom fit to screen callback
+	// 'buttonRect' is used for displaying the dropdown below that rect if possible otherwise above
+	// 'windowSize' is used for setting up initial size
+	// 'locationPriorityOrder' is for manual popup direction, if null it uses default order: down, up, left or right
+	internal void ShowAsDropDown (Rect buttonRect, Vector2 windowSize, PopupLocationHelper.PopupLocation[] locationPriorityOrder)
+	{
+		// Setup position before bringing window live (otherwise the dropshadow on Windows will be placed in 0,0 first frame)
+		position = ShowAsDropDownFitToScreen (buttonRect, windowSize, locationPriorityOrder);
+
+		// Show window and focus
+		ShowWithMode(ShowMode.PopupMenu);
+		
+		// Fit to screen again now that we have a container window
+		position = ShowAsDropDownFitToScreen (buttonRect, windowSize, locationPriorityOrder);
+
+		// Default to none resizable window
+		minSize = new Vector2 (position.width, position.height);
+		maxSize = new Vector2 (position.width, position.height);
+		
+		// Focus window
+		if (focusedWindow != this)
+			Focus();
+
+		// Add after unfreezing display because AuxWindowManager.cpp assumes that aux windows are added after we got/lost- focus calls.
+		m_Parent.AddToAuxWindowList();	
+		
+		// Dropdown windows should not be saved to layout
+		m_Parent.window.m_DontSaveToLayout = true;
+	}		
+	
+		
+	internal Rect ShowAsDropDownFitToScreen (Rect buttonRect, Vector2 windowSize, PopupLocationHelper.PopupLocation[] locationPriorityOrder)
+	{
+		if (m_Parent == null)
+			return new Rect(buttonRect.x, buttonRect.yMax, windowSize.x, windowSize.y);
+		
+		return m_Parent.window.GetDropDownRect(buttonRect, windowSize, windowSize, locationPriorityOrder);
+	}
+
+	
+	// Show the EditorWindow.
+	CSRAW public void Show (bool immediateDisplay = false) {
+		// If somebody called show on us, set up the neccessary structure for us.
+		if (m_Parent == null)
+			CreateNewWindowForEditorWindow (this, true, immediateDisplay);
+	}
+	
+	// Show the editor window in the auxiliary window.
+	CSRAW public void ShowAuxWindow ()
+	{
+		ShowWithMode(ShowMode.AuxWindow);
+		
+		// We ensure Focus change before calling AddToAuxWindowList because the 
+		// AuxWindowManager assumes that focus has been changed before a new window is added.
+		Focus (); 
+
+		m_Parent.AddToAuxWindowList ();
+	}
+	
+	// Show modal editor window. Other windows will not be accessible until this one is closed.
+	CSRAW internal void ShowModal()
+	{
+		ShowWithMode(ShowMode.AuxWindow);
+		MakeModal(m_Parent.window);
+	}
+
+
+
+	// The current mac impementation will not return until the window is closed!
+	CUSTOM internal void MakeModal(ContainerWindow win)
+	{
+		if (win)
+			ExtractMonoObjectData<MonoContainerWindowData> (win).m_WindowPtr->MakeModal();
+	}
+	
+	// Returns the first EditorWindow of type /t/ which is currently on the screen. 
+	CSRAW public static EditorWindow GetWindow (System.Type t, bool utility = false, string title = null, bool focus = true)
+	{
+		Object[] wins = Resources.FindObjectsOfTypeAll (t);
+		EditorWindow win = wins.Length > 0 ? (EditorWindow)(wins[0]) : null;
+
+		if (!win)
+		{
+			win = ScriptableObject.CreateInstance(t) as EditorWindow;
+			if (title != null)
+				win.title = title;
+			if (utility)
+				win.ShowUtility ();
+			else 
+				win.Show ();
+		}
+		else if ( focus )
+			win.Focus ();
+		return win;
+	}
+
+	///*listonly*	
+	CSRAW public static T GetWindow<T> () where T : EditorWindow
+	{
+		return GetWindow<T>(false, null, true);
+	}
+
+	///*listonly*	
+	CSRAW public static T GetWindow<T> (bool utility) where T : EditorWindow
+	{
+		return GetWindow<T>(utility, null, true);
+	}
+	
+	///*listonly*	
+	CSRAW public static T GetWindow<T> (bool utility, string title) where T : EditorWindow
+	{
+		return GetWindow<T>(utility, title, true);
+	}
+	
+	///*listonly*	
+	CSRAW public static T GetWindow<T> (string title) where T : EditorWindow
+	{
+		return GetWindow<T>(title, true);
+	}
+
+	///*listonly*	
+	CSRAW public static T GetWindow<T> (string title, bool focus) where T : EditorWindow
+	{
+		return GetWindow<T>(false, title, focus);
+	}
+	
+	// Returns the first EditorWindow of type /T/ which is currently on the screen. 
+	CSRAW public static T GetWindow<T> (bool utility, string title, bool focus) where T : EditorWindow
+	{
+		return GetWindow(typeof(T), utility, title, focus) as T;
+	}
+
+	///*listonly*	
+	CSRAW public static T GetWindow<T> (params System.Type[] desiredDockNextTo) where T : EditorWindow
+	{
+		return GetWindow<T>(null, true, desiredDockNextTo);
+	}
+
+	///*listonly*	
+	CSRAW public static T GetWindow<T> (string title, params System.Type[] desiredDockNextTo) where T : EditorWindow
+	{
+		return GetWindow<T>(title, true, desiredDockNextTo);
+	}
+
+	// Returns the first EditorWindow of type /T/ which is currently on the screen. 
+	CSRAW public static T GetWindow<T> (string title, bool focus, params System.Type[] desiredDockNextTo) where T : EditorWindow
+	{
+		var wins = Resources.FindObjectsOfTypeAll (typeof(T)) as T[];
+		T win = wins.Length > 0 ? wins[0] : null;
+
+		//If the window already exists just focus then return it...
+		if (win != null)
+		{
+			if (focus)
+				win.Focus ();
+			return win;
+		}
+		
+		win = CreateInstance<T>();
+		if (title != null)
+			win.title = title;
+
+		//Iterate the desired dock next to types...
+		foreach (var desired in desiredDockNextTo)
+		{
+			foreach (var w in ContainerWindow.windows)
+			{
+				foreach (var view in w.mainView.allChildren)
+				{
+					var dockArea = view as DockArea;
+					if (dockArea == null) continue;
+					if (dockArea.m_Panes.Any (pane => pane.GetType () == desired))
+					{
+						dockArea.AddTab (win);
+						return win;
+					}
+				}
+			}
+		}
+		win.Show ();
+		return win;
+	}
+
+	// Focuses the first found EditorWindow of specified type if it is open.
+	CSRAW public static void FocusWindowIfItsOpen(System.Type t)
+	{
+		Object[] wins = Resources.FindObjectsOfTypeAll(t);
+		EditorWindow win = wins.Length > 0 ? (wins[0] as EditorWindow) : null;
+		if (win)
+			win.Focus();
+	}
+	
+	// Focuses the first found EditorWindow of type /T/ if it is open.
+	CSRAW public static void FocusWindowIfItsOpen<T>() where T:EditorWindow
+	{
+		FocusWindowIfItsOpen(typeof(T));
+	}
+
+	CSRAW internal void RemoveFromDockArea()
+	{
+		DockArea da = m_Parent as DockArea;
+		if (da) 
+		{
+			da.RemoveTab (this, true);
+		}
+	}
+
+	// Returns the first EditorWindow of type /t/ which is currently on the screen. 
+	CSRAW public static EditorWindow GetWindowWithRect (System.Type t, Rect rect, bool utility = false, string title = null)
+	{
+		Object[] wins = Resources.FindObjectsOfTypeAll (t);
+		EditorWindow win = wins.Length > 0 ? (EditorWindow)(wins[0]) : null;
+
+		if (!win) {
+			win = ScriptableObject.CreateInstance(t) as EditorWindow;
+			win.minSize = new Vector2(rect.width, rect.height);
+			win.maxSize = new Vector2(rect.width, rect.height);
+			win.position = rect;
+			if (title != null)
+				win.title = title;
+			
+			if (utility)
+				win.ShowUtility ();
+			else 
+				win.Show ();
+		}
+		else
+			win.Focus ();
+			
+		return win;
+	}
+
+	///*listonly*
+	CSRAW public static T GetWindowWithRect<T> (Rect rect) where T : EditorWindow
+	{
+		return GetWindowWithRect<T>(rect, false, null, true);
+	}
+	///*listonly*	
+	CSRAW public static T GetWindowWithRect<T> (Rect rect, bool utility) where T : EditorWindow
+	{
+		return GetWindowWithRect<T>(rect, utility, null, true);
+	}
+	///*listonly*	
+	CSRAW public static T GetWindowWithRect<T> (Rect rect, bool utility, string title) where T : EditorWindow
+	{
+		return GetWindowWithRect<T>(rect, utility, title, true);
+	}
+	
+	// Returns the first EditorWindow of type /t/ which is currently on the screen. 
+	CSRAW public static T GetWindowWithRect<T> (Rect rect, bool utility, string title, bool focus) where T : EditorWindow
+	{
+		Object[] windows = Resources.FindObjectsOfTypeAll(typeof(T));
+		T window;
+		
+		if (windows.Length > 0)
+		{
+			window = (T)windows[0];
+			if (focus)
+				window.Focus();
+		}
+		else
+		{
+			window = ScriptableObject.CreateInstance<T>();
+			window.minSize = new Vector2(rect.width, rect.height);
+			window.maxSize = new Vector2(rect.width, rect.height);
+			window.position = rect;
+			if (title != null)
+				window.title = title;
+			if (utility)
+				window.ShowUtility();
+			else
+				window.Show();
+		}
+		
+		return window;
+	}
+
+	
+	CSRAW internal static T GetWindowDontShow<T> () where T : EditorWindow
+	{
+		Object[] windows = Resources.FindObjectsOfTypeAll(typeof(T));
+		return (windows.Length > 0) ? (T)windows[0] : ScriptableObject.CreateInstance<T>();
+	}
+
+	// Close the editor window.
+	CSRAW public void Close () {
+		// Ensure to restore normal workspace before destroying. Fix case 406657.
+		if (WindowLayout.IsMaximized (this))
+			WindowLayout.Unmaximize (this);
+	
+		DockArea da = m_Parent as DockArea;
+		if (da) {
+			da.RemoveTab (this, true);
+		} else {
+			m_Parent.window.Close ();
+		}
+		Object.DestroyImmediate (this, true);
+	}
+
+
+	// Make the window repaint.
+	CSRAW public void Repaint () {
+		if (m_Parent && m_Parent.actualView == this)
+		{
+			m_Parent.Repaint ();			
+		}
+	}
+
+	CSRAW internal void RepaintImmediately () {
+		if (m_Parent && m_Parent.actualView == this)
+			m_Parent.RepaintImmediately ();
+	}
+
+	// the minimum size of this window
+	CSRAW public Vector2 minSize {	get 
+		{ return m_MinSize; } 
+		set { m_MinSize = value; MakeParentsSettingsMatchMe (); } 
+	}
+
+	// the maximum size of this window
+	CSRAW public Vector2 maxSize { get { return m_MaxSize; } 
+		set { m_MaxSize = value; MakeParentsSettingsMatchMe (); } 
+	}
+
+	// The title of this window
+	CSRAW public string title { get { 
+			return m_Title; 
+		}  
+		set { 
+			m_Title = value; 
+			m_CachedTitleContent = null; 
+			if ( m_Parent && m_Parent.window && m_Parent.window.mainView == m_Parent )
+				m_Parent.window.title = m_Title;
+		} 
+	}
+
+
+	CSRAW internal GUIContent cachedTitleContent
+	{ 
+		get
+		{
+			if (m_CachedTitleContent == null)
+				m_CachedTitleContent = EditorGUIUtility.TextContent(m_Title);
+			return m_CachedTitleContent;
+		}
+	}
+	
+	CSRAW public int depthBufferBits {
+		get { return m_DepthBufferBits; }
+		set { m_DepthBufferBits = value; }
+	}
+
+	CSRAW internal Rect GetCurrentGameViewRect ()
+	{
+		return m_GameViewRect;
+	}
+
+	CSRAW internal void SetInternalGameViewRect(Rect rect)
+	{
+		m_GameViewRect = rect;
+		MakeParentsSettingsMatchMe();
+	}
+	
+	CSRAW public int antiAlias {
+		get { return m_AntiAlias; }
+		set { m_AntiAlias = value; }
+	}
+
+	// The position of the window in screen space.
+	CSRAW public Rect position { 	get { return m_Pos; } 
+		set { 
+			m_Pos = value;
+			// We're setting the position of this editorWindow.
+			// Only handle this is we have a parent. (unless we're just getting set up)
+			if (m_Parent) {
+				// Figure out if we're the only window here. If we are not, we need to undock us. If we are not, we should just
+				// move the ContainerWindow that we're inside
+				DockArea da = m_Parent as DockArea;
+				if (!da) {
+					m_Parent.window.position = value;
+				} else if (!da || (da.parent && da.m_Panes.Count == 1 && !da.parent.parent)) { // We should have a DockArea, then a splitView, then null
+					da.window.position = da.borderSize.Add (value);
+				} else {
+					// We're docked in a deeper hierarchy, so we need to undock us
+					da.RemoveTab (this);
+					// and then create a new window for us... 
+					CreateNewWindowForEditorWindow (this, true, true);			
+				}
+			}
+		}
+	}
+
+	// Sends an Event to a window.
+	CSRAW public bool SendEvent (Event e) {
+		return m_Parent.SendEvent (e);
+	}
+
+	// *undocumented
+	CSRAW public EditorWindow () {
+		title = GetType ().ToString();
+		hideFlags = HideFlags.DontSave; // Can't be HideAndDontSave, as that would make scriptable wizard GUI be disabled
+	}
+	
+	// Implement your own editor GUI here.
+	CSNONE void OnGUI ();	
+	
+	// Called 100 times per second on all visible windows.
+	CSNONE void Update ();
+
+	// OnInspectorUpdate is called at 10 frames per second to give the inspector a chance to update
+	CSNONE void OnInspectorUpdate ();
+
+	// OnDestroy is called when the EditorWindow is closed.
+	CSNONE void OnDestroy ();
+	
+	// Called whenever the selection has changed. 
+	CSNONE void OnSelectionChange ();
+
+	// Called when the window gets keyboard focus.
+	CSNONE void OnFocus ();
+
+	// Called when the window loses keyboard focus.
+	CSNONE void OnLostFocus ();
+	
+	//*undocumented*
+	CSNONE void OnDidOpenScene ();
+	
+	// Called whenever the scene hierarchy has changed. 
+	CSNONE void OnHierarchyChange ();
+	
+	// Called whenever the project has changed.
+	CSNONE void OnProjectChange ();
+	
+	// Internal stuff:
+	// Helper to show this EditorWindow
+	internal static void CreateNewWindowForEditorWindow (EditorWindow window, bool loadPosition, bool showImmediately)
+	{
+		CreateNewWindowForEditorWindow (window, new Vector2 (window.position.x, window.position.y), loadPosition, showImmediately);
+	}
+
+	internal static void CreateNewWindowForEditorWindow (EditorWindow window, Vector2 screenPosition, bool loadPosition, bool showImmediately)
+	{
+		ContainerWindow cw = ScriptableObject.CreateInstance<ContainerWindow> ();
+		SplitView sw = ScriptableObject.CreateInstance<SplitView>();
+		cw.mainView = sw;
+		DockArea da = ScriptableObject.CreateInstance<DockArea>();
+		sw.AddChild (da);
+		da.AddTab (window);
+		Rect r = window.m_Parent.borderSize.Add (new Rect (screenPosition.x,screenPosition.y, window.position.width, window.position.height));
+		cw.position = r;
+		sw.position = new Rect (0, 0, r.width, r.height);
+		cw.Show (ShowMode.NormalWindow, loadPosition, showImmediately);
+		//Need this, as show my change the size of the window, due to screen constraints
+		cw.OnResize ();
+	}
+	
+	// This is such a hack, but will do for now
+	CSRAW
+	[ContextMenu ("Add Scene")]
+	internal void AddSceneTab () { }
+	[ContextMenu ("Add Game")]
+	internal void AddGameTab () { }
+	
+END
+
+// How ContainerWindows are visualized. Used with ContainerWindow.Show
+ENUM internal ShowMode
+	// Show as a normal window with max, min & close buttons.
+	NormalWindow = 0,
+	// Used for a popup menu. On mac this means light shadow and no titlebar.
+	PopupMenu = 1,
+	// Utility window - floats above the app. Disappears when app loses focus.
+	Utility = 2,
+	// Window has no shadow or decorations. Used internally for dragging stuff around.
+	NoShadow = 3,
+	// The Unity main window. On mac, this is the same as NormalWindow, except window doesn't have a close button.
+	MainWindow = 4,
+	// Aux windows. The ones that close the moment you move the mouse out of them.
+	AuxWindow = 5,
+END
+
+[StructLayout (LayoutKind.Sequential)]
+CLASS internal ContainerWindow : ScriptableObject
+
+	CSRAW
+	[SerializeField]
+	MonoReloadableIntPtr   m_WindowPtr;
+	
+	#pragma warning disable 0414
+	[SerializeField]
+	Rect	m_PixelRect;
+	[SerializeField]
+	int	m_ShowMode;
+	[SerializeField]
+	string m_Title = "";
+	#pragma warning restore 0414
+	
+	[SerializeField]
+	View m_MainView;
+	[SerializeField]
+	Vector2 m_MinSize = new Vector2 (120,80);
+	[SerializeField]
+	Vector2 m_MaxSize = new Vector2 (4000,4000);
+
+	internal bool m_DontSaveToLayout = false;
+	
+	
+	C++RAW
+ #define GET ExtractMonoObjectData<MonoContainerWindowData> (self)
+ #define GET_WINDOW ExtractMonoObjectData<MonoContainerWindowData> (self).m_WindowPtr
+ #define CHECK_WINDOW if (ExtractMonoObjectData<MonoContainerWindowData> (self).m_WindowPtr == NULL) return;
+
+	CSRAW public ContainerWindow ()
+	{
+		hideFlags = HideFlags.DontSave;
+		m_PixelRect = new Rect (0,0,400,300);
+	}
+
+	CUSTOM void SetAlpha (float alpha) {
+		CHECK_WINDOW;
+		GET_WINDOW->SetAlpha (alpha);
+	}
+	
+	// Used by invisible "under the mouse" window of the eye dropper.
+	CUSTOM void SetInvisible () {
+		CHECK_WINDOW;
+		GET_WINDOW->SetInvisible ();
+	}
+	
+	CUSTOM void SetIsDragging(bool dragging)
+	{
+		CHECK_WINDOW;
+		GET_WINDOW->SetIsDragging (dragging);
+	}
+
+	CUSTOM bool IsZoomed()
+	{
+		if (ExtractMonoObjectData<MonoContainerWindowData> (self).m_WindowPtr == NULL) return false;
+		return GET_WINDOW->IsZoomed ();
+	}
+
+	CSRAW internal ShowMode showMode { get { return (ShowMode)m_ShowMode; } }
+	
+	CSRAW internal void ShowPopup ()
+	{
+		m_ShowMode = (int)ShowMode.PopupMenu;
+		Internal_Show (m_PixelRect, m_ShowMode, m_MinSize, m_MaxSize);
+		if (m_MainView)
+			m_MainView.SetWindowRecurse (this);
+		Internal_SetTitle (m_Title);
+		Save();		
+		Internal_BringLiveAfterCreation (false, false);
+	}
+
+	// Show the editor window.
+	CSRAW public void Show (ShowMode  showMode, bool loadPosition, bool displayImmediately)
+	{
+		if (showMode == ShowMode.AuxWindow)
+			showMode = ShowMode.Utility;
+		
+		if (showMode == ShowMode.Utility || showMode == ShowMode.PopupMenu)
+			m_DontSaveToLayout = true;
+	
+		m_ShowMode = (int)showMode;		
+		
+		// Load previous position/size
+		if (showMode != ShowMode.PopupMenu)
+			Load(loadPosition);
+		
+		Internal_Show (m_PixelRect, m_ShowMode, m_MinSize, m_MaxSize);
+			
+		// Tell the mainview its now in this window (quick hack to get platform-specific code to move its views to the right window)
+		if (m_MainView)
+			m_MainView.SetWindowRecurse (this);
+		Internal_SetTitle (m_Title);
+		
+		Internal_BringLiveAfterCreation (displayImmediately, true);
+
+		// Window could be killed by now in user callbacks...
+		if (this == null)
+			return;
+
+		// Fit window to screen - needs to be done after bringing the window live
+		position = FitWindowRectToScreen (m_PixelRect, false, false);					
+		mainView.position = new Rect (0,0, m_PixelRect.width, m_PixelRect.height);
+		mainView.Reflow ();
+
+		// save position right away
+		Save();
+	}
+	
+	CSRAW public void OnEnable () {
+		if (m_MainView)
+			m_MainView.Initialize (this);
+	}
+
+	CSRAW public void SetMinMaxSizes (Vector2 min, Vector2 max) {
+		m_MinSize = min;
+		m_MaxSize = max;
+		Rect r = position;
+		Rect r2 = r;
+		r2.width = Mathf.Clamp (r.width, min.x, max.x);
+		r2.height = Mathf.Clamp (r.height, min.y, max.y);
+		if (r2 .width != r.width || r2.height != r.height)
+			position = r2;
+		Internal_SetMinMaxSizes (min, max);
+	}
+	CUSTOM private void Internal_SetMinMaxSizes (Vector2 minSize, Vector2 maxSize) {
+		if (GET_WINDOW)
+			GET_WINDOW->SetMinMaxSizes (minSize, maxSize); 
+	}
+
+	CUSTOM private void Internal_Show (Rect r, int showMode, Vector2 minSize, Vector2 maxSize)
+	{
+		if (GET_WINDOW == NULL)
+		{
+			GET_WINDOW = new ContainerWindow ();
+			GET_WINDOW->Init(ScriptingObjectToObject<MonoBehaviour> (self), r, showMode, minSize, maxSize);
+		}
+	}
+
+	CUSTOM private void Internal_BringLiveAfterCreation (bool displayImmediately, bool setFocus)
+	{
+		if (GET_WINDOW != NULL)
+		{
+			GET_WINDOW->BringLiveAfterCreation(displayImmediately, setFocus);
+		}
+	}
+
+	// Disables any repaints until freeze is set to false again.
+	CUSTOM static void SetFreezeDisplay(bool freeze)
+	{
+		ContainerWindow::SetFreezeDisplay(freeze);
+	}
+
+	CUSTOM void DisplayAllViews()
+	{
+		if (GET_WINDOW != NULL)
+		{
+			GET_WINDOW->DisplayAllViews();
+		}
+	}
+
+	CSRAW internal void InternalCloseWindow ()
+	{
+		Save ();
+		if (m_MainView)
+		{
+			if (m_MainView is GUIView)
+				((GUIView)m_MainView).RemoveFromAuxWindowList ();
+			DestroyImmediate (m_MainView, true);
+			m_MainView = null;
+		}
+
+		DestroyImmediate (this, true);
+	}
+
+
+	CSRAW public void Close () 
+	{
+		Save ();
+		InternalClose ();		
+		DestroyImmediate (this, true);
+	}
+	
+	CUSTOM void Minimize () {
+		if (GET_WINDOW)
+			GET_WINDOW->Minimize ();
+	}
+
+	CUSTOM void ToggleMaximize () {
+		if (GET_WINDOW)
+			GET_WINDOW->ToggleMaximize ();
+	}
+
+	CUSTOM void MoveInFrontOf (ContainerWindow other) {
+		if (GET_WINDOW)
+		{
+			if(other != NULL && ExtractMonoObjectData<MonoContainerWindowData> (other).m_WindowPtr)
+				GET_WINDOW->MoveInFrontOf (ExtractMonoObjectData<MonoContainerWindowData> (other).m_WindowPtr);
+			else
+				GET_WINDOW->MoveInFrontOf (NULL);
+		}
+	}
+
+	CUSTOM void MoveBehindOf (ContainerWindow other) {
+		if (GET_WINDOW)
+		{
+			if(other != NULL && ExtractMonoObjectData<MonoContainerWindowData> (other).m_WindowPtr)
+				GET_WINDOW->MoveBehindOf (ExtractMonoObjectData<MonoContainerWindowData> (other).m_WindowPtr);
+			else
+				GET_WINDOW->MoveBehindOf (NULL);
+		}
+	}
+
+	CUSTOM_PROP bool maximized { if (GET_WINDOW) return GET_WINDOW->IsMaximized(); return false; }
+
+	// Close the editor window.
+	CUSTOM void InternalClose ()
+	{
+		if (GET_WINDOW)
+		{
+			GET_WINDOW->Close();
+		}
+	}
+
+	CUSTOM void OnDestroy ()
+	{
+		AssertIf(GET_WINDOW != NULL);
+	}
+	
+	
+	CSRAW internal bool IsNotDocked()
+	{
+		return ( // halleluja
+		
+			(m_ShowMode == (int)ShowMode.Utility || m_ShowMode == (int)ShowMode.AuxWindow) ||
+		
+			(mainView as SplitView != null &&
+			mainView.children.Length == 1 &&
+			mainView.children.Length == 1 &&
+			mainView.children[0] is DockArea &&
+			((DockArea)mainView.children[0]).m_Panes.Count == 1)			
+		);
+	}
+	
+	
+	CSRAW private string NotDockedWindowID()
+	{
+		if (IsNotDocked())
+		{			
+			HostView v = mainView as HostView;
+			
+			if (v == null)
+			{
+				
+				if (mainView is SplitView)
+					v = (HostView)mainView.children[0];
+				else
+					return mainView.GetType().ToString();
+			}
+						
+				
+			return (m_ShowMode == (int)ShowMode.Utility || m_ShowMode == (int)ShowMode.AuxWindow)?v.actualView.GetType().ToString()
+								:((DockArea)mainView.children[0]).m_Panes[0].GetType().ToString();
+			
+		}
+		else
+			return null;
+	}	
+	
+	CSRAW public void Save () {		
+		// only save it if its not docked and its not the MainWindow
+		if ((m_ShowMode != (int)ShowMode.MainWindow) && IsNotDocked() && !IsZoomed())
+		{		
+			string ID = NotDockedWindowID();
+
+			// save position/size	
+			EditorPrefs.SetFloat (ID +"x", m_PixelRect.x);
+			EditorPrefs.SetFloat (ID +"y", m_PixelRect.y);
+			EditorPrefs.SetFloat (ID +"w", m_PixelRect.width);
+			EditorPrefs.SetFloat (ID +"h", m_PixelRect.height);
+		}
+	}
+	
+	CSRAW private void Load (bool loadPosition) {	
+		if ((m_ShowMode != (int)ShowMode.MainWindow) && IsNotDocked())
+		{		
+			string ID = NotDockedWindowID();
+		
+			// get position/size	
+			Rect p = m_PixelRect;
+			if (loadPosition)
+			{
+				p.x = EditorPrefs.GetFloat (ID +"x", m_PixelRect.x);
+				p.y = EditorPrefs.GetFloat (ID +"y", m_PixelRect.y);
+			}
+			p.width = Mathf.Max(EditorPrefs.GetFloat (ID +"w", m_PixelRect.width), m_MinSize.x);
+			p.height = Mathf.Max(EditorPrefs.GetFloat (ID +"h", m_PixelRect.height), m_MinSize.y);
+			m_PixelRect = p;
+		}
+	}
+	
+	
+	CSRAW internal void OnResize ()
+	{
+		if (mainView == null)
+			return;
+		
+		mainView.position = new Rect (0,0, position.width, position.height);
+		mainView.Reflow ();
+		// save position
+		Save();
+	}
+	
+	// Pixel-position on screen.
+ 	CUSTOM_PROP Rect position { return GET.m_PixelRect; } { GET.m_PixelRect = value; if (GET_WINDOW) GET_WINDOW->SetRect (value); }
+
+	// The title of the window
+	CSRAW public string title { get { return m_Title; }
+		set { m_Title = value; Internal_SetTitle (value); }
+	}
+	CUSTOM private void Internal_SetTitle (string title) {
+		if (GET_WINDOW)		
+			GET_WINDOW->SetTitle (title); 
+	}
+
+	// Array of all visible ContainerWindows, from frontmost to last
+	CSRAW static List<ContainerWindow> s_AllWindows = new List<ContainerWindow> ();
+	CSRAW public static ContainerWindow[] windows { get {
+		s_AllWindows.Clear ();
+		GetOrderedWindowList ();
+		return s_AllWindows.ToArray ();
+	} }
+	
+	CUSTOM internal static void GetOrderedWindowList () {
+		ContainerWindow::GetOrderedWindowList ();
+	}
+	
+	CSRAW internal void AddToWindowList () {
+		s_AllWindows.Add (this);
+	}
+	
+	// TODO: Handle title bar height and other shit
+	CSRAW public Vector2 WindowToScreenPoint (Vector2 windowPoint) {
+		Vector2 hmm; 
+		Internal_GetTopleftScreenPosition (out hmm);
+		return windowPoint + hmm;// + new Vector2 (position.x, position.y) + hmm;
+	}
+	
+	CUSTOM private void Internal_GetTopleftScreenPosition (out Vector2 pos)
+	{
+		*pos = Vector2f (0,0);
+		if (GET_WINDOW)
+			*pos = GET_WINDOW->GetTopleftScreenPosition ();
+	}
+
+	CSRAW public View mainView
+	{ 
+		get { return m_MainView; }
+		set
+		{ 
+			m_MainView = value;
+			m_MainView.SetWindowRecurse (this);
+			m_MainView.position = new Rect (0,0,position.width, position.height);
+            m_MinSize = value.minSize;
+            m_MaxSize = value.maxSize;
+		}
+	}
+	
+	CSRAW internal string DebugHierarchy ()
+	{
+		return mainView.DebugHierarchy (0);
+	}
+	
+	CSRAW internal Rect GetDropDownRect (Rect buttonRect, Vector2 minSize, Vector2 maxSize, PopupLocationHelper.PopupLocation[] locationPriorityOrder)
+	{
+		return PopupLocationHelper.GetDropDownRect (buttonRect, minSize, maxSize, this, locationPriorityOrder);
+	}
+	
+	CSRAW internal Rect GetDropDownRect (Rect buttonRect, Vector2 minSize, Vector2 maxSize)
+	{
+		return PopupLocationHelper.GetDropDownRect (buttonRect, minSize, maxSize, this);
+	}
+	
+	CSRAW internal Rect FitPopupWindowRectToScreen (Rect rect, float minimumHeight)
+	{
+		const float maxHeight = 900;
+		float spaceFromBottom = 70f;
+		if (Application.platform == RuntimePlatform.OSXEditor)
+			spaceFromBottom = 10f;
+		
+		float minHeight = minimumHeight + spaceFromBottom;
+		Rect p = rect;
+		p.height = Mathf.Min(p.height, maxHeight);
+		p.height += spaceFromBottom;
+		p = FitWindowRectToScreen(p, true, true);
+		
+		float newHeight = Mathf.Max(p.yMax - rect.y, minHeight);
+		p.y = p.yMax - newHeight;
+		p.height = newHeight - spaceFromBottom;
+
+		return p;
+	}	
+
+	// Fit a container window to the screen.
+	CUSTOM internal Rect FitWindowRectToScreen (Rect r, bool forceCompletelyVisible, bool useMouseScreen) {
+		if (GET_WINDOW)
+			return GET_WINDOW->FitWindowRectToScreen (r, useMouseScreen, forceCompletelyVisible);
+		return Rectf ();
+	}
+	C++RAW
+ #undef GET
+	
+	C++RAW
+ #undef GET_WINDOW
+	
+	C++RAW
+ #undef CHECK_WINDOW
+	
+	CSRAW static internal bool macEditor { get { return Application.platform == RuntimePlatform.OSXEditor; } }
+	
+	CSRAW
+	const float kButtonWidth = 13, kButtonHeight = 13, kButtonSpacing = 3, kButtonTop = 0;
+	internal static GUIStyle s_ButtonClose, s_ButtonMin, s_ButtonMax, s_ButtonCloseActive, s_ButtonMinActive, s_ButtonMaxActive, s_ButtonInactive, s_WindowResize;
+	static void InitIcons () {
+		if (macEditor) {
+			s_ButtonClose = "WinBtnCloseMac";
+			s_ButtonMin = "WinBtnMinMac";
+			s_ButtonMax = "WinBtnMaxMac";
+			s_ButtonCloseActive = "WinBtnCloseActiveMac";
+			s_ButtonMinActive = "WinBtnMinActiveMac";
+			s_ButtonMaxActive = "WinBtnMaxActiveMac";
+			s_ButtonInactive = "WinBtnInactiveMac";
+			s_WindowResize = "WindowResizeMac";
+		} else {
+			s_ButtonClose = "WinBtnCloseWin";
+			s_ButtonMin = "WinBtnMinWin";
+			s_ButtonMax = "WinBtnMaxWin";
+		}
+	}
+	
+	public void HandleEdgesEnd (Rect windowPosition) { 		// Draw corner resize thing on OSX - the OS already does all event handling, so we need only draw it so people see it.
+		bool hasRight = Mathf.Abs (windowPosition.xMax - position.width) < 2;
+		bool hasBottom = Mathf.Abs (windowPosition.yMax - position.height) < 2;
+		if (Event.current.type == EventType.Repaint) 
+		{
+			if (macEditor) 
+			{
+				if ((m_MinSize == Vector2.zero || m_MinSize != m_MaxSize) && hasBottom && hasRight) 
+				{
+					if (s_WindowResize == null)
+						InitIcons ();
+
+					s_WindowResize.Draw (new Rect (windowPosition.width - s_WindowResize.fixedWidth,windowPosition.height - s_WindowResize.fixedHeight,s_WindowResize.fixedWidth,s_WindowResize.fixedHeight), false, false, false, false);
+				}
+			}
+		}
+	}
+
+	CSRAW public void HandleEdgesStart (Rect windowPosition) {
+		bool hasLeft = windowPosition.x == 0;
+		bool hasTop = windowPosition.y == 0; 
+		bool hasRight = Mathf.Abs (windowPosition.xMax - position.width) < 2;
+		bool hasBottom = Mathf.Abs (windowPosition.yMax - position.height) < 2;
+		InitIcons ();
+		GUIStyle close, min, max;
+		if (macEditor) {
+			if (hasRight && hasTop && showMode != ShowMode.Utility && showMode != ShowMode.PopupMenu) 
+			{
+				/*if (Mouse Is inside rect ) {
+					close = s_ButtonCloseActive;
+					min = s_ButtonMinActive;
+					max = s_ButtonMaxActive;
+				} else */ {
+					GUIView f = GUIView.focusedView;
+					if (f && f.window == this) {
+						close = s_ButtonClose;
+						min = s_ButtonMin;
+						max = s_ButtonMax;
+					} else {
+						close = min = max = s_ButtonInactive;
+					}
+				} 
+				if (GUI.Button (new Rect (windowPosition.width - kButtonWidth - kBorderSize, kButtonTop, kButtonWidth, kButtonHeight), GUIContent.none, close))
+					Close ();
+				
+				if (GUI.Button (new Rect (windowPosition.width - kButtonWidth * 2f - kButtonSpacing - kBorderSize, kButtonTop, kButtonWidth, kButtonHeight), GUIContent.none, min)) 
+				{
+					Minimize ();
+					GUIUtility.ExitGUI ();
+				}
+				if (GUI.Button (new Rect (windowPosition.width - kButtonWidth * 3f - kButtonSpacing * 2f - kBorderSize, kButtonTop, kButtonWidth, kButtonHeight), GUIContent.none, max)) 
+					ToggleMaximize ();
+			}
+			DragWindowEdgesMac (hasLeft, hasTop, hasRight, hasBottom, windowPosition);
+		} else {   /* windows */ 
+			if (hasRight && hasTop && showMode != ShowMode.Utility && showMode != ShowMode.PopupMenu ) {
+		
+				if (GUI.Button (new Rect (windowPosition.width - kButtonWidth - kBorderSize, kButtonTop, kButtonWidth, kButtonHeight), GUIContent.none, s_ButtonClose))
+					Close ();
+				
+				if (GUI.Button (new Rect (windowPosition.width - kButtonWidth * 2f - kButtonSpacing - kBorderSize, kButtonTop, kButtonWidth, kButtonHeight), GUIContent.none, s_ButtonMax)) 
+					ToggleMaximize ();
+				
+//				if (GUI.Button (new Rect (windowPosition.width - kButtonWidth * 2f - kButtonSpacing - kBorderSize, kButtonTop, kButtonWidth, kButtonHeight), GUIContent.none, s_ButtonMin)) 
+//					Minimize ();			
+			}
+
+			if (!maximized)
+				DragWindowEdgesWin (hasLeft, hasTop, hasRight, hasBottom, windowPosition);
+		}
+	}
+	
+	CSRAW [SerializeField]
+	List<SnapEdge>[] edges = { null, null, null, null, null, null, null, null, null };
+	CSRAW [SerializeField]
+	SnapEdge m_Left, m_Right, m_Top, m_Bottom;
+	const float kBorderSize = 4;
+	const float kTitleHeight = 24;
+	const float kMacCornerSize = 16;
+	private void SetupWindowEdges () {
+		Rect r = position;
+
+		// initialize edges
+		if (m_Left == null) {
+			m_Left = new SnapEdge (this, SnapEdge.EdgeDir.Left, r.xMin, r.yMin, r.yMax);
+			m_Right = new SnapEdge (this, SnapEdge.EdgeDir.Right, r.xMax, r.yMin, r.yMax);
+			m_Top = new SnapEdge (this, SnapEdge.EdgeDir.Up, r.yMin, r.xMin, r.xMax);
+			m_Bottom = new SnapEdge (this, SnapEdge.EdgeDir.Down, r.yMax, r.xMin, r.xMax);
+
+			for (int i = 0; i < 9; i++)
+				edges[i] = new List<SnapEdge>();
+			edges[0].Add (m_Top); edges[0].Add (m_Left);
+			edges[1].Add (m_Top);
+			edges[2].Add (m_Top); edges[2].Add (m_Right);
+			edges[3].Add (m_Left);
+			edges[4].Add (m_Left); edges[4].Add (m_Right); edges[4].Add (m_Top); edges[4].Add (m_Bottom);
+			edges[5].Add (m_Right);
+			edges[6].Add (m_Bottom); edges[6].Add (m_Left);
+			edges[7].Add (m_Bottom);
+			edges[8].Add (m_Bottom); edges[8].Add (m_Right);
+		}	
+		
+		m_Left.pos = r.xMin; m_Left.start = r.yMin; m_Left.end = r.yMax;
+		m_Right.pos = r.xMax; m_Right.start = r.yMin; m_Right.end = r.yMax;
+		m_Top.pos = r.yMin; m_Top.start = r.xMin; m_Top.end = r.xMax;
+		m_Bottom.pos = r.yMax; m_Bottom.start = r.xMin; m_Bottom.end = r.xMax;
+	}
+
+	private void DragWindowEdgesMac (bool left, bool top, bool right, bool bottom, Rect windowPosition) 
+	{
+		SetupWindowEdges ();
+		Rect pixelRect = position;
+		
+		GUI.changed = false;
+		int changedEdges = 0;
+		
+		if (top && showMode != ShowMode.Utility && showMode != ShowMode.PopupMenu) 
+			DragEdges (new Rect (0,0,windowPosition.width, kTitleHeight), edges[4], new Vector2 (pixelRect.xMin, pixelRect.yMin), true, true, MouseCursor.Arrow, ref changedEdges, false);
+		if (bottom && right) 
+			DragEdges (new Rect (windowPosition.width - kMacCornerSize, windowPosition.height - kMacCornerSize, kMacCornerSize, kMacCornerSize), edges[8], new Vector2 (pixelRect.xMin, pixelRect.yMin), true, true, MouseCursor.Arrow, ref changedEdges, false);
+
+		if (GUI.changed) {
+			ClampEdgeSizes (changedEdges);
+			Rect pos = new Rect (m_Left.pos, m_Top.pos, m_Right.pos - m_Left.pos, m_Bottom.pos - m_Top.pos);
+			pos = FitWindowRectToScreen (pos, false, false);
+			position = pos;
+		}
+
+	}
+
+
+	private void DragWindowEdgesWin (bool left, bool top, bool right, bool bottom, Rect windowPosition) 
+	{
+		if (top && showMode != ShowMode.Utility && showMode != ShowMode.PopupMenu) {
+			SetupWindowEdges ();
+			GUI.changed = false;
+			int changedEdges = 0;
+			Rect pixelRect = position;
+
+			// title bar
+			DragEdges (new Rect (0,0,windowPosition.width, kTitleHeight), edges[4], new Vector2 (pixelRect.xMin, pixelRect.yMin), true, true, MouseCursor.Arrow, ref changedEdges, true);
+
+			if (GUI.changed) {
+				ClampEdgeSizes (changedEdges);
+				position = new Rect (m_Left.pos, m_Top.pos, m_Right.pos - m_Left.pos, m_Bottom.pos - m_Top.pos);
+			}
+		}
+	}
+	
+	private void ClampEdgeSizes (int changedDirs) {
+		Vector2 minSize = m_MinSize;
+		Vector2 maxSize = m_MaxSize;
+		float sizeX = m_Right.pos - m_Left.pos;
+		float sizeY = m_Bottom.pos - m_Top.pos;
+		float clampSizeX = Mathf.Clamp (sizeX, minSize.x, maxSize.x);
+		float clampSizeY = Mathf.Clamp (sizeY, minSize.y, maxSize.y);
+		if (sizeX != clampSizeX) {
+			if ((changedDirs & (1<<(int)SnapEdge.EdgeDir.Left)) != 0)
+				m_Left.pos = m_Right.pos - clampSizeX;
+			else
+				m_Right.pos = m_Left.pos + clampSizeX;
+		}
+		if (sizeY != clampSizeY) {
+			if ((changedDirs & (1<<(int)SnapEdge.EdgeDir.Up)) != 0)
+				m_Top.pos = m_Bottom.pos - clampSizeY;
+			else
+				m_Bottom.pos = m_Top.pos + clampSizeY;
+		}
+	}
+	
+	// Snapping windows:
+
+	static Vector2 s_DragStartMousePos;
+	static Vector2 s_LastDragMousePos;	
+	private void DragEdges (Rect position, IEnumerable<SnapEdge> edges, Vector2 windowPosition, bool allowHorizontal, bool allowVertical, MouseCursor cursor, ref int changedEdges, bool windowMove) {
+		int id = GUIUtility.GetControlID (FocusType.Passive);
+		Event evt = Event.current;
+		
+		switch (evt.GetTypeForControl (id)) {
+		case EventType.Repaint:
+			EditorGUIUtility.AddCursorRect (position, cursor);
+			break;
+		case EventType.MouseDown:
+			// If the mouse is inside the button, we say that we're the hot control
+			if (position.Contains (evt.mousePosition) && GUIUtility.hotControl == 0 && evt.button == 0) {
+				GUIUtility.hotControl = id;
+				SetIsDragging(true);
+				Event.current.Use ();
+				s_LastDragMousePos = GUIUtility.GUIToScreenPoint (evt.mousePosition);
+				s_DragStartMousePos = s_LastDragMousePos;
+				foreach (SnapEdge e in edges) {
+					e.startDragPos = e.pos;
+					e.startDragStart = e.start;
+				}
+			}
+			break;
+		case EventType.MouseUp:
+			if (GUIUtility.hotControl == id) {
+				GUIUtility.hotControl = 0;
+				SetIsDragging(false);				
+				Event.current.Use ();
+			}
+			break;
+		case EventType.MouseDrag:
+			if (GUIUtility.hotControl == id) {				
+				Vector2 absMouse = GUIUtility.GUIToScreenPoint (evt.mousePosition);
+				Vector2 movement = absMouse - s_LastDragMousePos;
+
+				s_LastDragMousePos = absMouse;
+				if (!windowMove)
+					movement = absMouse - s_DragStartMousePos;
+
+				if (!allowHorizontal)
+					movement.x = 0;
+				if (!allowVertical)
+					movement.y = 0;
+				
+				GUI.changed = true;
+				foreach (SnapEdge e in edges) {
+					e.ApplyOffset (movement, ref changedEdges, windowMove);
+				}
+			}
+			break;
+		}
+	}
+END
+
+// Baseclass for all views in Unity. Implements the view hierarchy, but doesn't really do much else.
+[StructLayout (LayoutKind.Sequential)]
+NONSEALED_CLASS internal View : ScriptableObject
+CSRAW
+	CSRAW internal virtual void Reflow () {
+		foreach (View c in children)
+			c.Reflow ();
+	}
+
+	CSRAW internal string DebugHierarchy (int level) {
+		string prefix = "", s = "";
+		for (int i = 0; i < level; i++) {
+			prefix = prefix + "  ";
+		}
+		s = s + prefix + this.ToString() + " p:" +position;
+		if (children.Length > 0) {
+			s += " {\n";
+			foreach (View child in children) {
+				s += child.DebugHierarchy (level + 2);
+			}
+			s+= prefix + " }\n";
+		} else
+			s+= "\n";
+		return s;
+	}
+
+	// Can be used by concrete subclasses to store C++ objects
+	CSRAW [SerializeField]
+	MonoReloadableIntPtr   m_ViewPtr;
+	[SerializeField]
+	View[] m_Children = new View[0];
+	[System.NonSerialized]
+	View m_Parent;
+	[System.NonSerialized]
+	ContainerWindow m_Window;
+
+	// Workaround for nonserialized stuff above
+	internal virtual void Initialize (ContainerWindow win) {
+		SetWindow (win);
+		foreach (View i in m_Children) {
+			i.m_Parent = this;
+			i.Initialize (win);
+		}
+	}
+
+	[SerializeField]
+	Rect m_Position = new Rect (0,0,100,100);
+	
+	[SerializeField]
+	internal Vector2 m_MinSize;
+	[SerializeField]
+	internal Vector2 m_MaxSize;
+	
+	public Vector2 minSize { get { return m_MinSize; } }
+	public Vector2 maxSize { get { return m_MaxSize; } }
+
+	internal void SetMinMaxSizes (Vector2 min, Vector2 max) {
+		if (minSize == min && maxSize == max) {
+			return;
+		}
+		m_MinSize = min;
+		m_MaxSize = max;
+		if (m_Parent)
+			m_Parent.ChildrenMinMaxChanged ();
+		if (window && window.mainView == this)
+			window.SetMinMaxSizes (min, max);
+	}
+
+	// Notification so other views can respond to this.
+	protected virtual void ChildrenMinMaxChanged() {}
+
+	// Get all children of this view, using bottom-first recursion
+	public View[] allChildren { get {			
+			ArrayList arr = new ArrayList ();
+			foreach (View i in m_Children) {
+				arr.AddRange (i.allChildren);	
+			}
+			arr.Add (this);
+			return (View[])arr.ToArray(typeof(View));
+	} }
+	public View () {
+		hideFlags = HideFlags.DontSave;
+	}
+	// position in the parent's space.
+	public Rect position {	get { return m_Position; }
+		set { SetPosition (value); }
+	}
+
+	// Override to resize subviews
+	protected virtual void SetPosition (Rect newPos) {
+		m_Position = newPos;
+	}
+	
+	// Only set the position.
+	internal void SetPositionOnly (Rect newPos) {
+		m_Position = newPos;
+	}
+	
+	// position in the window
+	public Rect windowPosition { get {
+		if (m_Parent == null)
+			return position;
+			
+		Rect p = parent.windowPosition; 
+		return new Rect (p.x + position.x, p.y + position.y, position.width, position.height);
+	}}
+
+	// absolute screen position
+	public Rect screenPosition { get { 
+			Rect r = windowPosition; 
+			if (window != null)
+			{
+				Vector2 p = window.WindowToScreenPoint (Vector2.zero); 
+				r.x += p.x; r.y += p.y; 
+			}
+			return r; 
+		} 
+	}
+
+	//  Which window we're inside. don't set this directly, but change use AddChild, RemoveChild instead.
+	public ContainerWindow window { get { return m_Window; } }
+	//  The parent view.
+	public View parent { get { return m_Parent; } }
+	
+	// please don't modify this array directly. use AddChild or set the child's parent view
+	public View[] children { get { return m_Children; } }
+	public int IndexOfChild (View child) {
+		int i = 0;
+		foreach (View c in m_Children) {
+			if (c == child)
+				return i;
+			i++;
+		}
+		return -1;
+	}
+
+	public void OnDestroy ()
+	{
+		foreach (View v in m_Children)
+		{
+			Object.DestroyImmediate (v, true);
+		}
+	}
+	
+	// Add/remove child views
+	public void AddChild (View child) 
+	     {AddChild (child, m_Children.Length); }
+	public virtual void AddChild (View child, int idx) {
+		System.Array.Resize (ref m_Children, m_Children.Length + 1);
+		if (idx != m_Children.Length - 1)
+			System.Array.Copy (m_Children, idx, m_Children, idx + 1, m_Children.Length - idx - 1);
+
+		m_Children[idx] = child;
+
+		if (child.m_Parent) 
+			child.m_Parent.RemoveChild (child);
+		child.m_Parent = this;
+		child.SetWindowRecurse (window);
+		ChildrenMinMaxChanged ();
+	}
+	
+	public virtual void RemoveChild (View child) {
+		int idx = System.Array.IndexOf (m_Children, child);
+		if (idx == -1)
+			Debug.LogError ("Unable to remove child - it's not IN the view");
+		else 
+			RemoveChild (idx);
+	}
+	
+	public virtual void RemoveChild (int idx) {
+		View child = m_Children[idx];
+		child.m_Parent = null;
+		child.SetWindowRecurse (null);
+		System.Array.Copy (m_Children, idx +1, m_Children, idx, m_Children.Length - idx - 1);
+		System.Array.Resize (ref m_Children, m_Children.Length - 1);
+		ChildrenMinMaxChanged ();
+	}
+
+	protected virtual void SetWindow (ContainerWindow win) {
+		m_Window = win;
+	}
+
+	internal void SetWindowRecurse (ContainerWindow win) {
+		SetWindow (win);
+		foreach (View i in m_Children) {
+			i.SetWindowRecurse (win);
+		}
+	}
+	
+	virtual protected bool OnFocus ()
+	{
+		return true;
+	}
+		
+END
+
+// This is what we (not users) derive from to create various views. (Main Toolbar, crap like that)
+CSRAW [StructLayout (LayoutKind.Sequential)]
+NONSEALED_CLASS internal GUIView : View
+	C++RAW
+ #define GET ExtractMonoObjectData<MonoViewData> (self)
+	
+	C++RAW
+ #define GET_VIEW ExtractMonoObjectData<MonoViewData> (self).m_ViewPtr
+	
+	C++RAW
+ #define CHECK_VIEW if (ExtractMonoObjectData<MonoViewData> (self).m_ViewPtr == NULL) return;
+
+	CSRAW
+	int m_DepthBufferBits = 0;
+	int m_AntiAlias = 0;
+	bool m_WantsMouseMove = false;
+	bool m_AutoRepaintOnSceneChange = false;
+	private bool m_BackgroundValid = false;
+	
+	
+	CUSTOM private void Internal_Init (int depthBits, int antiAlias) {
+		if (GET_VIEW == NULL)
+		{
+			GET_VIEW = new GUIView ();
+			GET_VIEW->Init(ScriptingObjectToObject<MonoBehaviour> (self), depthBits, antiAlias);
+		}
+	}
+	CUSTOM private void Internal_Recreate (int depthBits, int antiAlias) {
+		GUIView* view = GET_VIEW;
+		if (!view)
+			return;
+		view->RecreateContext (depthBits, antiAlias);
+	}
+
+	CUSTOM private void Internal_Close () {
+		CHECK_VIEW;
+		delete GET_VIEW;
+		AssertIf(GET_VIEW != NULL);
+	}
+
+	CSRAW internal bool SendEvent (Event e)
+	{
+		int depth = SavedGUIState.Internal_GetGUIDepth();
+		bool retval = false;
+		if (depth > 0)
+		{
+			SavedGUIState oldState = SavedGUIState.Create ();
+			retval = Internal_SendEvent (e);
+			oldState.ApplyAndForget();
+		} else {
+			retval = Internal_SendEvent (e);
+		}
+		return retval;
+	}
+
+	CUSTOM private bool Internal_SendEvent (Event e) 
+	{
+		if (! GET_VIEW)
+			return false;
+
+		GET_VIEW->UpdateScreenManager ();
+		bool retval = GET_VIEW->OnInputEvent (*e);
+
+		return retval;
+	}
+
+	CUSTOM internal void AddToAuxWindowList ()
+	{
+		GET_VIEW->AddToAuxWindowList ();
+	}
+
+	CUSTOM internal void RemoveFromAuxWindowList ()
+	{
+		GET_VIEW->RemoveFromAuxWindowList ();
+	}
+	
+	CUSTOM protected void Internal_SetAsActiveWindow () 
+	{
+		GET_VIEW->SetAsActiveWindow ();
+	}
+
+	// Call into C++ here to move the underlying NSViews around
+	CSRAW protected override void SetWindow (ContainerWindow win) {
+		base.SetWindow(win);
+		Internal_Init (m_DepthBufferBits, m_AntiAlias);
+		if (win)
+			Internal_SetWindow (win);
+		Internal_SetAutoRepaint(m_AutoRepaintOnSceneChange);
+		Internal_SetPosition (windowPosition);
+		Internal_SetWantsMouseMove(m_WantsMouseMove);
+		m_BackgroundValid = false;
+	}
+	
+	CSRAW internal void RecreateContext () {
+		Internal_Recreate (m_DepthBufferBits, m_AntiAlias);
+		m_BackgroundValid = false;
+	}
+	
+	CSRAW public bool wantsMouseMove {
+		get { return m_WantsMouseMove; }
+		set { m_WantsMouseMove = value; Internal_SetWantsMouseMove(m_WantsMouseMove); }
+	}
+	
+	CSRAW internal bool backgroundValid {
+		get { return m_BackgroundValid; }
+		set { m_BackgroundValid = value; }
+	}
+
+	CSRAW public bool autoRepaintOnSceneChange {
+		get { return m_AutoRepaintOnSceneChange; }
+		set { m_AutoRepaintOnSceneChange = value; Internal_SetAutoRepaint(m_AutoRepaintOnSceneChange); }
+	}
+	
+	CSRAW public int depthBufferBits {
+		get { return m_DepthBufferBits; }
+		set { m_DepthBufferBits = value; }
+	}
+	
+	CSRAW public int antiAlias {
+		get { return m_AntiAlias; }
+		set { m_AntiAlias = value; }
+	}
+
+	CUSTOM private void Internal_SetWantsMouseMove (bool wantIt) {
+		CHECK_VIEW;
+		GET_VIEW->SetWantsMouseMove (wantIt);
+	}
+
+	CUSTOM void SetInternalGameViewRect (Rect rect)
+	{
+		CHECK_VIEW;
+		GET_VIEW->SetGameViewRect (rect);
+	}
+	
+	CUSTOM void SetAsStartView ()
+	{
+		CHECK_VIEW;
+		GET_VIEW->SetAsStartView ();
+	}	
+	
+	CUSTOM void ClearStartView ()
+	{
+		GUIView::ClearStartView ();
+	}
+	
+	CUSTOM private void Internal_SetAutoRepaint (bool doit) {
+		CHECK_VIEW;
+		GET_VIEW->SetAutoRepaintOnSceneChange (doit);
+	}
+
+	CUSTOM private void Internal_SetWindow (ContainerWindow win) {
+		CHECK_VIEW
+		ContainerWindow *win2 = ExtractMonoObjectData<MonoContainerWindowData> (win).m_WindowPtr;
+		GET_VIEW->SetWindow (win2); 
+	}
+	
+	CSRAW protected override void SetPosition (Rect newPos) {
+		Rect oldWinPos = windowPosition;
+		base.SetPosition (newPos);		
+		if (oldWinPos == windowPosition) {
+			Internal_SetPosition (windowPosition);
+			return;
+		}
+		Repaint ();
+		Internal_SetPosition (windowPosition);
+		m_BackgroundValid = false;
+	}
+	
+	CUSTOM private void Internal_SetPosition (Rect windowPosition) {
+		CHECK_VIEW
+		GET_VIEW->SetPosition (windowPosition);
+	}
+
+	// Repaint this view
+	CUSTOM public void Focus () {
+		CHECK_VIEW;
+		GET_VIEW->Focus (); 
+	}
+
+	// Repaint this view
+	CUSTOM public void Repaint () {
+		if (GET_VIEW == NULL)
+		{
+			CallStaticMonoMethod("WindowLayout", "WarnBrokenRepaint");
+			return;
+		}
+		CHECK_VIEW;
+		GET_VIEW->Repaint (); 
+	}
+
+	// Repaint this view immediately
+	CUSTOM public void RepaintImmediately () {
+		CHECK_VIEW;
+		GET_VIEW->ForceRepaint (); 
+	}
+	
+	CUSTOM internal void MakeVistaDWMHappyDance () {
+		#if UNITY_WIN
+		CHECK_VIEW;
+		GET_VIEW->MakeVistaDWMHappyDance (); 
+		#endif
+	}
+	
+	CUSTOM internal void StealMouseCapture () {
+		CHECK_VIEW;
+		GET_VIEW->StealMouseCapture (); 
+	}
+	
+	CSRAW public new void OnDestroy () {
+		Internal_Close ();
+		base.OnDestroy ();
+	}
+	
+	CUSTOM internal void ClearKeyboardControl ()
+	{
+		CHECK_VIEW;
+		GET_VIEW->ClearKeyboardControl (); 
+	}
+
+	CUSTOM_PROP static GUIView current
+	{
+		return Scripting::ScriptingWrapperFor(GUIView::GetCurrentMonoView());
+	}
+
+	CUSTOM_PROP static GUIView focusedView
+	{
+		GUIView* view = GetKeyGUIView();
+		if (view != NULL) 
+			return Scripting::ScriptingWrapperFor(view->GetBehaviour());
+		else
+			return NULL;
+	}
+
+	CUSTOM_PROP static GUIView mouseOverView
+	{
+		GUIView* view = GetMouseOverWindow();
+		if (view != NULL) 
+			return Scripting::ScriptingWrapperFor(view->GetBehaviour());
+		else
+			return NULL;
+	}
+	
+	CUSTOM_PROP bool hasFocus { return (GET_VIEW) == GetKeyGUIView(); }
+	// Implement this to do the cool GUI shit.
+	CSNONE void OnGUI ();
+		
+	CUSTOM_PROP internal bool mouseRayInvisible
+		{ return GET_VIEW->GetMouseRayInvisible(); }
+		{ GET_VIEW->SetMouseRayInvisible (value); }
+
+
+	C++RAW
+ #undef GET
+ #undef GET_VIEW
+ #undef CHECK_VIEW
+	
+	// Draw resize handles, etc.
+	CSRAW internal void DoWindowDecorationStart () {
+		// On windows, we want both close window and side resizes.
+		// Titlebar dragging is done at the end, so we can drag next to tabs.
+		if (window != null)
+			window.HandleEdgesStart (windowPosition);
+	}
+
+	CSRAW internal void DoWindowDecorationEnd() {
+		if (window != null)
+			window.HandleEdgesEnd (windowPosition);		
+	}
+END
+CSRAW
+
+} //namespace

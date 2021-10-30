@@ -1,0 +1,458 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (United States) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#include ""WinEditorVersion.rc""\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ERRORS DIALOGEX 0, 0, 256, 121
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Error"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    ICON            "",IDC_ST_ERRICON,7,7,20,20
+    LTEXT           "Static",IDC_ST_ERROR,36,14,213,8
+    LTEXT           "Details:",IDC_STATIC,7,31,50,8
+    EDITTEXT        IDC_EDIT_ERRORS,7,40,242,53,ES_MULTILINE | ES_AUTOHSCROLL | ES_READONLY | NOT WS_BORDER | WS_VSCROLL | NOT WS_TABSTOP,WS_EX_STATICEDGE
+    DEFPUSHBUTTON   "OK",IDOK,102,100,50,14
+END
+
+IDD_DIALOGONE DIALOGEX 0, 0, 254, 57
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_TOOLWINDOW
+CAPTION "(Title)"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_PICTURE,"Static",SS_BITMAP | SS_REALSIZEIMAGE,11,8,15,13,WS_EX_TRANSPARENT
+    LTEXT           "Static",IDC_ST_TITLE,70,7,177,8
+    LTEXT           "Static",IDC_ST_CONTENT,70,19,176,8
+    DEFPUSHBUTTON   "OK",IDOK,103,36,50,14
+END
+
+IDD_DIALOGTWO DIALOGEX 0, 0, 259, 57
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_TOOLWINDOW
+CAPTION "(Title)"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_PICTURE,"Static",SS_BITMAP | SS_REALSIZEIMAGE,11,8,15,13,WS_EX_TRANSPARENT
+    LTEXT           "Static",IDC_ST_TITLE,71,7,177,8
+    LTEXT           "Static",IDC_ST_CONTENT,71,19,177,8
+    DEFPUSHBUTTON   "First",IDOK,74,36,50,14
+    PUSHBUTTON      "Second",IDCANCEL,131,36,50,14
+END
+
+IDD_DIALOGTHREE DIALOGEX 0, 0, 263, 57
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_TOOLWINDOW
+CAPTION "(Title)"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_PICTURE,"Static",SS_BITMAP | SS_REALSIZEIMAGE,11,8,15,13,WS_EX_TRANSPARENT
+    LTEXT           "Static",IDC_ST_TITLE,69,7,172,8
+    LTEXT           "Static",IDC_ST_CONTENT,69,19,172,8
+    DEFPUSHBUTTON   "First",IDOK,44,36,50,14
+    PUSHBUTTON      "Second",IDABORT,103,36,50,14
+    PUSHBUTTON      "Third",IDCANCEL,162,36,50,14
+END
+
+IDD_TAB_OPENPROJECT DIALOGEX 0, 0, 350, 170
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Select recently opened project:",IDC_STATIC,7,6,102,8
+    LISTBOX         IDC_LST_PROJECTS,7,18,336,126,LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Open Other...",IDC_BROWSE,7,149,78,14
+    DEFPUSHBUTTON   "Open",IDOK,265,149,78,14,WS_DISABLED
+END
+
+IDD_TAB_NEWPROJECT DIALOGEX 0, 0, 350, 170
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Project Location:",IDC_STATIC,7,6,55,8
+    EDITTEXT        IDC_EDIT_PATH,7,18,275,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_BROWSE,288,18,55,14
+    LTEXT           "Import the following packages:",IDC_STATIC,7,42,100,8
+    CONTROL         "",IDC_LST_PACKAGES,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | LVS_NOCOLUMNHEADER | WS_BORDER | WS_TABSTOP,7,54,336,90
+    COMBOBOX        IDC_CMB_DEFAULTS,71,151,48,30,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON   "Create",IDOK,265,149,78,14,WS_DISABLED
+    LTEXT           "Setup defaults for:",IDC_STATIC,7,153,62,8
+END
+
+IDD_PROGRESS DIALOGEX 0, 0, 238, 34
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION
+EXSTYLE WS_EX_TOOLWINDOW
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_PROGRESS,"msctls_progress32",PBS_SMOOTH,7,7,224,9
+    LTEXT           "",IDC_ST_PATH,7,18,224,8,SS_NOPREFIX | SS_PATHELLIPSIS
+END
+
+IDD_PROJECTWIZARD DIALOGEX 0, 0, 370, 201
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Unity - Project Wizard"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_TAB_PROJECT,"SysTabControl32",0x0,7,6,356,188
+END
+
+IDD_ASSETS_PROGRESS DIALOGEX 0, 0, 238, 34
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE
+EXSTYLE WS_EX_TOOLWINDOW
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_PROGRESS,"msctls_progress32",PBS_SMOOTH,67,7,164,9
+    LTEXT           "Importing Assets:",IDC_STATIC,7,7,58,9
+    LTEXT           "",IDC_ST_PATH,67,18,164,8,SS_NOPREFIX | SS_PATHELLIPSIS
+END
+
+IDD_PROGRESS_WITHCANCEL DIALOGEX 0, 0, 258, 34
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION
+EXSTYLE WS_EX_TOOLWINDOW
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_PROGRESS,"msctls_progress32",PBS_SMOOTH,7,7,189,9
+    LTEXT           "",IDC_ST_PATH,7,18,244,8,SS_NOPREFIX | SS_PATHELLIPSIS
+    PUSHBUTTON      "Cancel",IDCANCEL,201,4,50,14
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_ERRORS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 249
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 114
+    END
+
+    IDD_DIALOGONE, DIALOG
+    BEGIN
+        LEFTMARGIN, 8
+        RIGHTMARGIN, 247
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 50
+    END
+
+    IDD_DIALOGTWO, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 252
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 50
+    END
+
+    IDD_DIALOGTHREE, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 256
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 50
+    END
+
+    IDD_TAB_OPENPROJECT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 343
+        TOPMARGIN, 6
+        BOTTOMMARGIN, 163
+    END
+
+    IDD_TAB_NEWPROJECT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 343
+        TOPMARGIN, 6
+        BOTTOMMARGIN, 163
+    END
+
+    IDD_PROGRESS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 231
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 27
+    END
+
+    IDD_PROJECTWIZARD, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 363
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 194
+    END
+
+    IDD_ASSETS_PROGRESS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 231
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 27
+    END
+
+    IDD_PROGRESS_WITHCANCEL, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 251
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 27
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_APP_ICON            ICON                    "..\\..\\..\\PlatformDependent\\Win\\res\\UnityIcon.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// RT_MANIFEST
+//
+
+1                       RT_MANIFEST             "..\\..\\..\\PlatformDependent\\Win\\res\\editor-xpstyle.manifest"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MAINMENU MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "New Scene\tCtrl+N",           ID_FILE_NEW
+        MENUITEM "Open Scene\tCtrl+O",          ID_FILE_OPEN
+        MENUITEM SEPARATOR
+        MENUITEM "Save Scene\tCtrl+S",          ID_FILE_SAVE
+        MENUITEM "Save Scene as...\tCtrl+Shift+S", ID_FILE_SAVE_AS
+        MENUITEM SEPARATOR
+        MENUITEM "New Project...",              ID_FILE_NEWPROJECT
+        MENUITEM "Open Project...",             ID_FILE_OPENPROJECT
+        MENUITEM "Save Project",                ID_FILE_SAVEPROJECT
+        MENUITEM SEPARATOR
+        MENUITEM "Build Settings...\tCtrl+Shift+B", ID_FILE_BUILDSETTINGS
+        MENUITEM "Build && Run\tCtrl+B",        ID_FILE_BUILDRUN
+        MENUITEM SEPARATOR
+        MENUITEM "Exit",                        IDC_FILE_CLOSE
+    END
+    POPUP "&Edit"
+    BEGIN
+        MENUITEM "Undo\tCtrl+Z",                ID_EDIT_UNDO
+        MENUITEM "Redo\tCtrl+Y",                ID_EDIT_REDO
+        MENUITEM SEPARATOR
+        MENUITEM "Cut\tCtrl+X",                 ID_EDIT_CUT
+        MENUITEM "Copy\tCtrl+C",                ID_EDIT_COPY
+        MENUITEM "Paste\tCtrl+V",               ID_EDIT_PASTE
+        MENUITEM SEPARATOR
+        MENUITEM "Duplicate\tCtrl+D",           ID_EDIT_DUPLICATE
+        MENUITEM "Delete\tShift+Del",           ID_EDIT_DELETE
+        MENUITEM SEPARATOR
+        MENUITEM "Frame Selected\tF",           ID_EDIT_FRAMESELECTED
+        MENUITEM "Lock View to Selected\tShift+F",ID_EDIT_FRAMESELECTEDWITHLOCK
+        MENUITEM "Find\tCtrl+F",                ID_EDIT_FIND
+        MENUITEM "Select All\tCtrl+A",          ID_EDIT_FRAMEALL
+        MENUITEM SEPARATOR
+        MENUITEM "Preferences...",              ID_EDIT_UNITYOPTIONS
+        MENUITEM SEPARATOR
+    END
+    POPUP "&Window"
+    BEGIN
+        MENUITEM "Next Window\tCtrl+Tab",       ID_WINDOW_NEXTWINDOW
+        MENUITEM "Previous Window\tCtrl+Shift+Tab", ID_WINDOW_PREVIOUSWINDOW
+        MENUITEM SEPARATOR
+    END
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&About Unity...",             ID_HELP_ABOUT
+        MENUITEM SEPARATOR
+        MENUITEM "&Manage License...",          ID_HELP_MANAGELICENSE
+        MENUITEM SEPARATOR
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// BINARY
+//
+
+IDR_SPLASH_IMAGE        BINARY                  "res\\Splash.png"
+IDR_UNITY_ICON          BINARY                  "..\\..\\Resources\\Common\\UnityPlayerIcon.png"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Cursor
+//
+
+IDC_SLIDE_ARROW         CURSOR                  "res\\SlideArrow.cur"
+IDC_SLIDE_ARROW_S       CURSOR                  "res\\SlideArrowShadow.cur"
+IDC_SLIDE_ARROW_VISTA   CURSOR                  "res\\SlideArrowVista.cur"
+IDC_SLIDE_ARROW_VISTA_S CURSOR                  "res\\SlideArrowVistaShadow.cur"
+IDC_MOVE_ARROW          CURSOR                  "res\\MoveArrow.cur"
+IDC_MOVE_ARROW_S        CURSOR                  "res\\MoveArrowShadow.cur"
+IDC_MOVE_ARROW_VISTA    CURSOR                  "res\\MoveArrowVista.cur"
+IDC_MOVE_ARROW_VISTA_S  CURSOR                  "res\\MoveArrowVistaShadow.cur"
+IDC_ROTATE_ARROW        CURSOR                  "res\\RotateArrow.cur"
+IDC_ROTATE_ARROW_S      CURSOR                  "res\\RotateArrowShadow.cur"
+IDC_ROTATE_ARROW_VISTA  CURSOR                  "res\\RotateArrowVista.cur"
+IDC_ROTATE_ARROW_VISTA_S CURSOR                  "res\\RotateArrowVistaShadow.cur"
+IDC_SCALE_ARROW         CURSOR                  "res\\ScaleArrow.cur"
+IDC_SCALE_ARROW_S       CURSOR                  "res\\ScaleArrowShadow.cur"
+IDC_SCALE_ARROW_VISTA   CURSOR                  "res\\ScaleArrowVista.cur"
+IDC_SCALE_ARROW_VISTA_S CURSOR                  "res\\ScaleArrowVistaShadow.cur"
+IDC_PLUS_ARROW_VISTA_S  CURSOR                  "res\\PlusArrowVistaShadow.cur"
+IDC_MINUS_ARROW         CURSOR                  "res\\MinusArrow.cur"
+IDC_MINUS_ARROW_S       CURSOR                  "res\\MinusArrowShadow.cur"
+IDC_MINUS_ARROW_VISTA   CURSOR                  "res\\MinusArrowVista.cur"
+IDC_MINUS_ARROW_VISTA_S CURSOR                  "res\\MinusArrowVistaShadow.cur"
+IDC_PLUS_ARROW          CURSOR                  "res\\PlusArrow.cur"
+IDC_PLUS_ARROW_S        CURSOR                  "res\\PlusArrowShadow.cur"
+IDC_PLUS_ARROW_VISTA    CURSOR                  "res\\PlusArrowVista.cur"
+IDC_PAN_VIEW            CURSOR                  "res\\PanView.cur"
+IDC_FPS_VIEW            CURSOR                  "res\\FPSView.cur"
+IDC_FPS_VIEW_S          CURSOR                  "res\\FPSViewShadow.cur"
+IDC_FPS_VIEW_VISTA      CURSOR                  "res\\FPSViewVista.cur"
+IDC_FPS_VIEW_VISTA_S    CURSOR                  "res\\FPSViewVistaShadow.cur"
+IDC_ORBIT_VIEW          CURSOR                  "res\\OrbitView.cur"
+IDC_ORBIT_VIEW_S        CURSOR                  "res\\OrbitViewShadow.cur"
+IDC_ORBIT_VIEW_VISTA    CURSOR                  "res\\OrbitViewVista.cur"
+IDC_ORBIT_VIEW_VISTA_S  CURSOR                  "res\\OrbitViewVistaShadow.cur"
+IDC_PAN_VIEW_S          CURSOR                  "res\\PanViewShadow.cur"
+IDC_PAN_VIEW_VISTA      CURSOR                  "res\\PanViewVista.cur"
+IDC_PAN_VIEW_VISTA_S    CURSOR                  "res\\PanViewVistaShadow.cur"
+IDC_ZOOM_VIEW           CURSOR                  "res\\ZoomView.cur"
+IDC_ZOOM_VIEW_S         CURSOR                  "res\\ZoomViewShadow.cur"
+IDC_ZOOM_VIEW_VISTA     CURSOR                  "res\\ZoomViewVista.cur"
+IDC_ZOOM_VIEW_VISTA_S   CURSOR                  "res\\ZoomViewVistaShadow.cur"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog Info
+//
+
+IDD_TAB_NEWPROJECT DLGINIT
+BEGIN
+    IDC_CMB_DEFAULTS, 0x403, 3, 0
+0x4433, "\000" 
+    IDC_CMB_DEFAULTS, 0x403, 3, 0
+0x4432, "\000" 
+    0
+END
+
+#endif    // English (United States) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Lithuanian (Lithuania) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_LTH)
+LANGUAGE LANG_LITHUANIAN, SUBLANG_LITHUANIAN
+#pragma code_page(1257)
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_GRAPHICS_SELECTION DIALOGEX 0, 0, 166, 53
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Graphics Selection"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "Pick",IDOK,12,30,66,14
+    PUSHBUTTON      "Pick Default",IDCANCEL,90,30,66,14
+    COMBOBOX        IDC_CMB_GRAPHICS,7,7,149,76,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_GRAPHICS_SELECTION, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 159
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 46
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // Lithuanian (Lithuania) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#include "WinEditorVersion.rc"
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

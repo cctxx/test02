@@ -1,0 +1,56 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Editor/Src/ParticleSystem/ParticleSystemEffect.h"
+#include "Editor/Src/ParticleSystem/ParticleSystemEditor.h"
+#include "Runtime/Graphics/ParticleSystem/ParticleSystem.h"
+#include "Runtime/Scripting/Scripting.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Collections;
+
+namespace UnityEditor
+{
+CLASS internal ParticleSystemEditorUtils
+
+	// returns an empty
+	CUSTOM static internal string CheckCircularReferences (ParticleSystem subEmitter, ParticleSystem subEmitterParent, ParticleSystem root)
+	{
+		CircularReferenceChecker circularReference;
+		std::string errorMsg = circularReference.Check (subEmitter, subEmitterParent, root);
+		return scripting_string_new(errorMsg);
+	}
+
+	CUSTOM_PROP internal static float editorSimulationSpeed { return ParticleSystemEditor::GetSimulationSpeed(); } { ParticleSystemEditor::SetSimulationSpeed (value); }
+	CUSTOM_PROP internal static float editorPlaybackTime { return ParticleSystemEditor::GetPlaybackTime(); } { ParticleSystemEditor::SetPlaybackTime (value); }
+	CUSTOM_PROP internal static bool editorIsScrubbing { return ParticleSystemEditor::GetIsScrubbing(); } { ParticleSystemEditor::SetIsScrubbing (value); }
+	CUSTOM_PROP internal static bool editorIsPlaying { return ParticleSystemEditor::GetPlaybackIsPlaying(); } { ParticleSystemEditor::SetPlaybackIsPlaying (value); }
+	CUSTOM_PROP internal static bool editorIsPaused { return ParticleSystemEditor::GetPlaybackIsPaused(); } { ParticleSystemEditor::SetPlaybackIsPaused(value); }
+	CUSTOM_PROP internal static bool editorResimulation { return ParticleSystemEditor::GetResimulation(); } { ParticleSystemEditor::SetResimulation (value); }
+	CUSTOM_PROP internal static bool editorUpdateAll { return ParticleSystemEditor::GetUpdateAll(); } { ParticleSystemEditor::SetUpdateAll (value); }
+	CUSTOM_PROP internal static ParticleSystem lockedParticleSystem { return Scripting::ScriptingWrapperFor(ParticleSystemEditor::GetLockedParticleSystem()); } { ParticleSystemEditor::SetLockedParticleSystem (value); }
+	CUSTOM internal static void PerformCompleteResimulation () { ParticleSystemEditor::SetPerformCompleteResimulation(true); }
+	
+		// Returns the root of the hierarchy of Particle Systems starting from 'ps'.
+	CSRAW static public ParticleSystem GetRoot (ParticleSystem ps)
+	{
+		if (ps == null)
+			return null;
+
+		Transform rootTransform = ps.transform;
+		while (rootTransform.parent && rootTransform.parent.gameObject.GetComponent<ParticleSystem>() != null)
+			rootTransform = rootTransform.parent;
+
+		return rootTransform.gameObject.GetComponent<ParticleSystem>();
+	}
+	
+	CUSTOM internal static void StopEffect (bool stop = true, bool clear = true) { ParticleSystemEffect::StopAndClearActive(stop, clear); }
+	
+END
+CSRAW }
+

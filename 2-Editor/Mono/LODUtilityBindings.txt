@@ -1,0 +1,74 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Utilities/LODUtility.h"
+#include "Configuration/UnityConfigure.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Camera/LODGroup.h"
+#include "Runtime/Camera/LODGroupManager.h"
+#include "Runtime/Camera/Camera.h"
+#include "Runtime/Camera/CullingParameters.h"
+
+using namespace std;
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+namespace UnityEditor
+{
+STRUCT internal LODVisualizationInformation
+	CSRAW public int triangleCount;
+	CSRAW public int vertexCount;
+	CSRAW public int rendererCount;
+	CSRAW public int submeshCount;
+	
+	CSRAW public int   activeLODLevel;
+	CSRAW public float activeLODFade;
+	CSRAW public float activeDistance;
+	CSRAW public float activeRelativeScreenSize;
+	CSRAW public float activePixelSize;
+	CSRAW public float worldSpaceSize;
+END
+
+// LOD Utility Helpers
+CLASS LODUtility
+	
+	CUSTOM internal static LODVisualizationInformation CalculateVisualizationData (Camera camera, LODGroup group, int lodLevel)
+	{
+		CullingParameters cullingParameters;
+		camera->CalculateCullingParameters(cullingParameters);
+		LODVisualizationInformation output;
+		output = GetLODGroupManager().CalculateVisualizationData (cullingParameters, *group, lodLevel);
+		return output;
+	}
+	
+	CUSTOM internal static float CalculateDistance (Camera camera, float relativeScreenHeight, LODGroup group)
+	{
+		if (camera->GetOrthographic ())
+		{
+			return group->GetWorldSpaceSize() / (2.0 * relativeScreenHeight);
+		}
+		else
+		{
+			CullingParameters cullingParameters;
+			camera->CalculateCullingParameters(cullingParameters);
+			
+			float halfAngle = tan(Deg2Rad (cullingParameters.lodFieldOfView) * 0.5F);
+			return group->GetWorldSpaceSize() / (2 * relativeScreenHeight * halfAngle);
+		}
+	}
+	
+	// Recalculate the bounding region for the given LODGroup.
+	CUSTOM static void CalculateLODGroupBoundingBox (LODGroup group)
+	{
+		CalculateLODGroupBoundingBox (*group);
+	}
+
+END
+
+CSRAW }

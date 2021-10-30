@@ -1,0 +1,15 @@
+CSRAW using System;
+
+CSRAW namespace UnityEditor {
+
+// The PreferenceItem attribute allows you to add preferences sections to the Preferences Window.
+CSRAW [AttributeUsage(AttributeTargets.Method)]
+CLASS PreferenceItem : Attribute
+	// Creates a section in the Preferences Window called /name/ and invokes the static function following it for the section's GUI.
+	CSRAW public PreferenceItem (string name) { this.name = name; }
+	
+	//*undocumented*
+	CSRAW public string name;
+END
+
+CSRAW }

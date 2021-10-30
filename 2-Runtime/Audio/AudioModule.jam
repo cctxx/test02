@@ -1,0 +1,137 @@
+rule AudioModule_ReportCpp
+{
+	local audiosources =
+		AudioBehaviour.cpp
+		AudioBehaviour.h
+		AudioChorusFilter.cpp
+		AudioChorusFilter.h
+		AudioClip.Callbacks.cpp
+		AudioClip.cpp
+		AudioClip.h
+		AudioClip_Flash.h
+		AudioClip_FMOD.h
+		AudioClip_Flash.cpp
+		AudioDistortionFilter.cpp
+		AudioDistortionFilter.h
+		AudioEchoFilter.cpp
+		AudioEchoFilter.h
+		AudioHighPassFilter.cpp
+		AudioHighPassFilter.h
+		AudioListener.cpp
+		AudioListener.h
+		AudioLowPassFilter.cpp
+		AudioLowPassFilter.h
+		AudioManager.Callbacks.cpp
+		AudioManager.cpp
+		AudioManager.h
+		AudioParameters.h
+		AudioReverbFilter.cpp
+		AudioReverbFilter.h
+		AudioReverbZone.cpp
+		AudioReverbZone.h
+		AudioSource.Callbacks.cpp
+		AudioSource.cpp
+		AudioSource.h
+		AudioSourceFilter.cpp
+		AudioSourceFilter.h
+		OggReader.h
+		WavReader.h
+		Utilities/Conversion.h
+		AudioCustomFilter.cpp
+		AudioCustomFilter.h
+		AudioScriptBufferManager.h
+		AudioScriptBufferManager.cpp
+
+		AudioModuleRegistration.cpp
+		AudioModule.cpp
+	;
+
+	local videosources = 
+		MoviePlayback.cpp
+		MoviePlayback.h
+		MovieTexture.cpp
+		MovieTexture.h
+		BaseVideoTexture.h
+		BaseVideoTexture.cpp
+		VideoTexture.h
+	;
+	
+	local modulesources =
+		Runtime/Audio/$(audiosources)
+		Runtime/Video/$(videosources)
+	;
+
+	if $(PLATFORM) in macosx32 macosx64 macosxppc
+	{
+		modulesources += PlatformDependent/OSX/VideoTexture.mm ;
+	}
+
+	if $(PLATFORM) in macosx32 macosx64 macosxppc iphone ipad iphonesimulator
+	{
+		modulesources += PlatformDependent/OSX/DecodeCVImageBufferFrame.cpp ;
+	}
+
+	# add other platforms here
+
+	return $(modulesources) ;
+}
+
+rule AudioModule_ReportTxt
+{
+	return 
+		Runtime/Audio/ScriptBindings/AudioBindings.txt
+		Runtime/Video/ScriptBindings/MovieTextureBindings.txt
+		Runtime/Video/ScriptBindings/UnityEngineWebCamTexture.txt
+	;
+}
+
+rule AudioModule_ReportIncludes
+{
+	return 
+		Projects/PrecompiledHeaders/ 
+		External/Audio/FMOD/builds/macosx/include
+		External/Audio/common_ogg 
+	;
+}
+
+rule AudioModule_ReportLibraries
+{
+	local libs = ;
+	if $(currentTarget) in MacEditor MacStandalonePlayer
+	{
+		libs += 
+			External/Theora/libs/Release/libtheoradec.a 
+			External/Audio/FMOD/builds/macosx/lib/libfmodex.a 
+		;
+	}
+	return $(libs) ;
+}
+
+rule AudioModule_ReportLinkFlags
+{
+	local flags = ;
+	if $(currentTarget) in MacEditor MacStandalonePlayer iPhonePlayer iPhoneSimulatorPlayer
+	{
+		flags += 
+			-framework CoreAudio 
+			-framework CoreVideo
+			-framework QuickTime
+			-framework AudioUnit
+			-framework Carbon
+			-framework QTKit
+		;
+	}
+	return $(flags) ;
+}
+
+
+rule AudioModule_Init
+{
+	OverrideModule Audio : GetModule_Cpp : byOverridingWithMethod : AudioModule_ReportCpp ;
+	OverrideModule Audio : GetModule_Txt : byOverridingWithMethod : AudioModule_ReportTxt ;
+	OverrideModule Audio : GetModule_Inc : byOverridingWithMethod : AudioModule_ReportIncludes ;
+	OverrideModule Audio : GetModule_Lib : byOverridingWithMethod : AudioModule_ReportLibraries ;
+	OverrideModule Audio : GetModule_Flags : byOverridingWithMethod : AudioModule_ReportLinkFlags ;
+}
+
+#RegisterModule Audio ;

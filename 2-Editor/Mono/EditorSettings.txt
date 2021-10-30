@@ -1,0 +1,89 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/EditorSettings.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+
+using namespace std;
+
+CSRAW
+using UnityEngine;
+
+namespace UnityEditor
+{
+
+//*undocumented*
+ENUM SerializationMode
+	Mixed = 0,
+	ForceBinary = 1,
+	ForceText = 2
+END
+
+//*undocumented*
+CONDITIONAL ENABLE_SPRITES
+ENUM EditorBehaviorMode
+	Mode3D = 0,
+	Mode2D = 1
+END
+
+//*undocumented*
+CONDITIONAL ENABLE_SPRITES
+ENUM SpritePackerMode
+	Disabled = 0,
+	BuildTimeOnly = 1,
+	AlwaysOn = 2
+END
+
+//*undocumented*
+// Must be a struct in order to have correct comparison behaviour
+public struct ExternalVersionControl
+{
+	private string m_Value;
+	
+	public static readonly string Disabled = "Hidden Meta Files";
+	public static readonly string AutoDetect = "Auto detect";
+	public static readonly string Generic = "Visible Meta Files";
+	public static readonly string AssetServer = "Asset Server";
+	
+	public ExternalVersionControl(string value)
+	{
+		m_Value = value;
+	}
+
+	// User-defined conversion
+	public static implicit operator string(ExternalVersionControl d)
+	{
+		return d.ToString();
+	}
+
+	// User-defined conversion
+	public static implicit operator ExternalVersionControl(string d)
+	{
+		return new ExternalVersionControl(d);
+	}
+	
+	public override string ToString()
+	{
+        return m_Value;
+    }
+}
+
+//*undocumented*
+CLASS EditorSettings : Object
+	
+	CUSTOM_PROP static string externalVersionControl { return scripting_string_new(GetEditorSettings().GetExternalVersionControlSupport()); } {  EditorSettings& s=GetEditorSettings(); s.SetExternalVersionControlSupport(value); s.SetDirty(); }
+
+	CUSTOM_PROP static SerializationMode serializationMode { return GetEditorSettings().GetSerializationMode() ; } {  GetEditorSettings().SetSerializationMode(value); }
+	
+	// The url the web security emulation feature will pretend your game is hosted at.
+	CUSTOM_PROP static string webSecurityEmulationHostUrl { return scripting_string_new(GetEditorSettings().GetWebSecurityEmulationHostUrl()); } { GetEditorSettings().SetWebSecurityEmulationHostUrl(value); }
+
+	CONDITIONAL ENABLE_SPRITES
+	CUSTOM_PROP static EditorBehaviorMode defaultBehaviorMode { return GetEditorSettings().GetDefaultBehaviorMode(); } { GetEditorSettings().SetDefaultBehaviorMode(value); }
+
+	CONDITIONAL ENABLE_SPRITES
+	CUSTOM_PROP static SpritePackerMode spritePackerMode { return GetEditorSettings().GetSpritePackerMode(); } { GetEditorSettings().SetSpritePackerMode(value); }
+
+END
+
+CSRAW }

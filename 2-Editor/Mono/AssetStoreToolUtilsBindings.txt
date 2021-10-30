@@ -1,0 +1,47 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/Utility/CurlRequest.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Mono/MonoScript.h"
+#include "Runtime/Misc/PreloadManager.h"
+#include "Runtime/Utilities/File.h"
+#include "Runtime/Utilities/FileUtilities.h"
+#include "Runtime/Misc/AssetBundleUtility.h"
+#include "Editor/Src/PackageUtility.h"
+#include "Editor/Src/Utility/BuildPlayerUtility.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngineInternal;
+using UnityEditorInternal;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.IO;
+
+namespace UnityEditorInternal
+{
+
+CLASS AssetStoreToolUtils
+	CUSTOM public static bool BuildAssetStoreAssetBundle (Object targetObject, string targetPath)
+	{
+		vector<PPtr<Object> > emptyObjects;
+
+		string error = BuildWebAssetBundle(targetObject, emptyObjects, NULL, targetPath, kBuildWebPlayerLZMA, kAssetBundleCollectDependencies, false);
+		if (!error.empty())
+			ErrorString(error);
+		return error.empty();
+	}
+
+END
+
+CSRAW }

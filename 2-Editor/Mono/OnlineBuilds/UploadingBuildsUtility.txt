@@ -1,0 +1,128 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/UploadingBuildsManager.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+
+using namespace std;
+
+CSRAW
+using System;
+using UnityEngine;
+using Object = UnityEngine.Object;
+
+
+namespace UnityEditor
+{
+
+
+// Ensure in-sync with enum UploadingBuild::Status (in UploadingBuildsManager.h)
+//*undocumented*
+ENUM internal UploadingBuildStatus  
+	Authorizing = 0,
+	Authorized = 1,
+	Uploading = 2,
+	Uploaded = 3,
+	UploadFailed = 4
+END
+
+
+// Ensure in-sunc with enum UploadingBuild::OverwriteHandling (in UploadingBuildsManager.h)
+//*undocumented*
+ENUM internal OverwriteHandling
+	Prompt = 0,
+	Overwrite = 1,
+	Version = 2,
+	Cancel = 3
+END
+
+
+C++RAW
+
+struct UploadingBuildToMono
+{
+	MonoString * displayName;
+	MonoString * url;
+	int status;
+	float progress;
+};
+
+
+STRUCT internal UploadingBuild
+    CSRAW
+    public string displayName;
+    public string url;
+    public UploadingBuildStatus status;
+	public float progress;
+END
+
+
+
+CLASS internal UploadingBuildsUtility
+	
+	
+	CSRAW static internal void UploadBuild (string buildPath, bool autoRun)
+	{
+		UploadBuild (buildPath, (int)OverwriteHandling.Prompt, autoRun);
+	}
+	
+	
+	CSRAW static internal void UploadBuild (string buildPath, int overwriteHandling, bool autoRun)
+	{
+		UploadBuild (buildPath, PlayerSettings.productName, overwriteHandling, autoRun);
+	}
+	
+	
+	CUSTOM static internal void UploadBuild (string buildPath, string displayName, int overwriteHandling, bool autoRun)
+	{
+		GetUploadingBuildsManager ().BeginUploadBuild (
+			buildPath,
+			displayName,
+			(UploadingBuild::OverwriteHandling)overwriteHandling,
+			autoRun
+		);
+	}
+	
+	
+	CSRAW static internal bool ResumeBuildUpload (string displayName)
+	{
+		return ResumeBuildUpload (displayName, true);
+	}
+	
+	
+	CUSTOM static internal bool ResumeBuildUpload (string displayName, bool replace)
+	{
+		return GetUploadingBuildsManager().ResumeBuildUpload (displayName, replace); 
+	}
+
+
+	CUSTOM static internal UploadingBuild[] GetUploadingBuilds ()
+	{
+		const vector<UploadingBuild*>& uploadingBuilds = GetUploadingBuildsManager ().GetUploadingBuilds ();
+		size_t size = uploadingBuilds.size();
+     	
+		MonoArray *arr = mono_array_new (mono_domain_get (), GetMonoManager ().GetBuiltinEditorMonoClass ("UploadingBuild"), size);
+     	
+		for (int i = 0; i < size ;i++) 
+		{
+			UploadingBuildToMono& a= GetMonoArrayElement<UploadingBuildToMono> (arr,i);
+     		
+			a.displayName = scripting_string_new(uploadingBuilds[i]->m_DisplayName);
+			a.url = scripting_string_new(uploadingBuilds[i]->m_URL);
+			a.progress = uploadingBuilds[i]->GetUploadProgress();
+			a.status = uploadingBuilds[i]->m_Status;
+		}
+		
+		return arr;		
+	}
+	
+	
+	CUSTOM static internal void RemoveUploadingBuild (string displayName)
+	{
+		GetUploadingBuildsManager().RemoveUploadingBuild (displayName);
+	}
+
+	
+END 
+
+CSRAW } 

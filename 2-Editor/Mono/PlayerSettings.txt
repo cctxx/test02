@@ -1,0 +1,2071 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Graphics/Texture2D.h"
+#include <vector>
+
+#include "Runtime/Misc/PlayerSettings.h"
+#include "Runtime/Misc/BuildSettings.h"
+#include "Editor/Src/EditorUserBuildSettings.h"
+#include "Editor/Src/Utility/BuildPlayerUtility.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Editor/Platform/Interface/EditorUtility.h"
+#include "Editor/Platform/Windows/Metro/MetroEditorUtility.h"
+#include "Runtime/Scripting/Scripting.h"
+
+CSRAW
+using System;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections.Generic;
+
+using UnityEngine;
+
+namespace UnityEditor
+{
+
+// Resolution dialog setting
+ENUM ResolutionDialogSetting
+
+	// Never show the resolutions dialog.
+	Disabled = 0,
+
+	// Show the resolutions dialog on first launch.
+	Enabled = 1,
+
+	// Hide the resolutions dialog on first launch.
+	HiddenByDefault = 2,
+END
+
+
+// Aspect ratio
+ENUM AspectRatio
+
+	// Undefined aspect ratios.
+	AspectOthers = 0,
+
+	// 4:3 aspect ratio.
+	Aspect4by3 = 1,
+
+	// 5:4 aspect ratio.
+	Aspect5by4 = 2,
+
+	// 16:10 aspect ratio.
+	Aspect16by10 = 3,
+
+	// 16:9 aspect ratio.
+	Aspect16by9 = 4,
+END
+
+// Mac fullscreen mode
+ENUM MacFullscreenMode
+
+	// Capture the display.
+	CaptureDisplay = 0,
+
+	// Fullscreen window.
+	FullscreenWindow = 1,
+
+	// Fullscreen window with Dock and Menu bar.
+	FullscreenWindowWithDockAndMenuBar = 2,
+END
+
+// Managed code stripping level
+ENUM StrippingLevel
+
+	// Managed code stripping is disabled
+	Disabled = 0,
+
+	// Unused parts of managed code are stripped away
+	StripAssemblies = 1,
+
+	// Managed method bodies are stripped away. AOT platforms only.
+	StripByteCode = 2,
+
+	// Lightweight mscorlib version will be used at expense of limited compatibility.
+	UseMicroMSCorlib = 3
+END
+
+// Script call optimization level
+ENUM ScriptCallOptimizationLevel
+
+	// Default setting
+	SlowAndSafe = 0,
+
+	// Script method call overhead decreased at the expense of limited compatibility.
+	FastButNoExceptions = 1
+END
+
+// Supported iOS SDK versions
+ENUM iOSSdkVersion
+
+	// Device SDK
+	DeviceSDK = 988,
+
+	// Simulator SDK
+	SimulatorSDK = 989
+END
+
+// Supported iOS deployment versions
+ENUM iOSTargetOSVersion
+
+	// iOS 4.0
+	iOS_4_0 = 10,
+
+	// iOS 4.1
+	iOS_4_1 = 12,
+
+	// iOS 4.2
+	iOS_4_2 = 14,
+
+	// iOS 4.3
+	iOS_4_3 = 16,
+
+	// iOS 5.0
+	iOS_5_0 = 18,
+
+	// iOS 5.1
+	iOS_5_1 = 20,
+
+	// iOS 6.0
+	iOS_6_0 = 22,
+
+	// Unknown iOS version, managed by user
+	Unknown = 999
+END
+
+// Target iOS device
+ENUM iOSTargetDevice
+	// iPhone/iPod Only
+	iPhoneOnly = 0,
+
+	// iPad Only
+	iPadOnly = 1,
+
+	// Universal : iPhone/iPod + iPad
+	iPhoneAndiPad = 2
+END
+
+// Activity Indicator on loading
+ENUM iOSShowActivityIndicatorOnLoading
+	// White Large
+	WhiteLarge = 0,
+
+	// White
+	White = 1,
+
+	// Gray
+	Gray = 2,
+
+	// Don't Show
+	DontShow = -1
+END
+
+// Target Android device architecture
+ENUM AndroidTargetDevice
+	// ARMv7 only
+	ARMv7 = 0,
+
+	// x86
+//	x86 = 3
+END
+
+// Supported Android SDK versions
+ENUM AndroidSdkVersions
+	// Android 2.0.1, "Eclair", API level 6
+	AndroidApiLevel6 = 6,
+
+	// Android 2.1, "Eclair", API level 7
+	AndroidApiLevel7 = 7,
+
+	// Android 2.2, "Froyo", API level 8
+	AndroidApiLevel8 = 8,
+
+	// Android 2.3.1, "Gingerbread", API level 9
+	AndroidApiLevel9 = 9,
+
+	// Android 2.3.3, "Gingerbread", API level 10
+	AndroidApiLevel10 = 10,
+
+	// Android 3.0, "Honeycomb", API level 11
+	AndroidApiLevel11 = 11,
+
+	// Android 3.1, "Honeycomb", API level 12
+	AndroidApiLevel12 = 12,
+
+	// Android 3.2, "Honeycomb", API level 13
+	AndroidApiLevel13 = 13,
+
+	// Android 4.0, "Ice Cream Sandwich", API level 14
+	AndroidApiLevel14 = 14,
+
+	// Android 4.0.3, "Ice Cream Sandwich", API level 15
+	AndroidApiLevel15 = 15,
+
+	// Android 4.1, "Jelly Bean", API level 16
+	AndroidApiLevel16 = 16,
+
+	// Android 4.2, "Jelly Bean", API level 16
+	AndroidApiLevel17 = 17
+END
+
+// Preferred application install location
+ENUM AndroidPreferredInstallLocation
+	// Let the OS decide, app doesn't have any preferences
+	Auto = 0,
+
+	// Prefer external, if possible. Install to internal otherwise
+	PreferExternal = 1,
+
+	// Force installation into internal memory. Needed for things like Live Wallpapers
+	ForceInternal = 2,
+END
+
+ENUM AndroidShowActivityIndicatorOnLoading
+	// Large == progressBarStyleLarge
+	Large=0,
+
+	// Inversed Large == progressBarStyleLargeInverse
+	InversedLarge=1,
+
+	// Small == progressBarStyleSmall
+	Small=2,
+
+	// Inversed Small == progressBarStyleSmallInverse
+	InversedSmall=3,
+
+	// Don't Show
+	DontShow = -1
+END
+
+// Target GLES graphics
+ENUM TargetGlesGraphics
+	OBSOLETE warning OpenGL ES 1.x is deprecated, ES 2.0 will be used instead
+	OpenGLES_1_x = 0,
+
+	// Open GLES 2.0
+	OpenGLES_2_0 = 1,
+
+	// Open GLES 3.0
+	OpenGLES_3_0 = 2
+END
+
+
+// Deployment target iOS device resolution
+ENUM iOSTargetResolution
+	// Native device resolution
+	Native = 0,
+
+	// Auto (Best Performane)
+	ResolutionAutoPerformance = 3,
+
+	// Auto (Best Quality)
+	ResolutionAutoQuality = 4,
+
+	// 320p (iPhone)
+	Resolution320p = 5,
+
+	// 640p (iPhone Retina Display)
+	Resolution640p = 6,
+
+	// 768p (iPad)
+	Resolution768p = 7
+
+END
+
+// Default mobile device orientation
+ENUM UIOrientation
+
+	// Portrait
+	Portrait = 0,
+
+	// Portrait upside down
+	PortraitUpsideDown = 1,
+
+	// Landscape: clockwise from Portrait
+	LandscapeRight = 2,
+
+	// Landscape : counter-clockwise from Portrait
+	LandscapeLeft = 3,
+
+	// Auto Rotation Enabled
+	AutoRotation = 4
+END
+
+// iOS status bar style
+ENUM iOSStatusBarStyle
+
+	// Default
+	Default = 0,
+
+	// Black translucent
+	BlackTranslucent = 1,
+
+	// Black opaque
+	BlackOpaque = 2
+END
+
+// Android splash screen scale modes
+ENUM AndroidSplashScreenScale
+
+	// Center
+	Center = 0,
+
+	// Scale to fit
+	ScaleToFit = 1,
+
+	// Scale to fill
+	ScaleToFill = 2
+END
+
+// .NET API compatibility level
+ENUM ApiCompatibilityLevel
+	// .NET 2.0
+	NET_2_0 = 1,
+
+	// .NET 2.0 Subset
+	NET_2_0_Subset = 2
+END
+
+// Wii region
+ENUM WiiRegion
+	// Japan
+	Japan = 1,
+
+	// USA
+	USA = 2,
+
+	// Europe
+	Europe = 3,
+
+	// China
+	China = 4,
+
+	// Korea
+	Korea = 5,
+
+	// Taiwan
+	Taiwan = 6
+END
+
+// WiiHio2Usage
+ENUM WiiHio2Usage
+	// None, Hio2 isn't used at all.
+	None = -1,
+	// Profiler, Hio2 is used for Wii profiler functionality.
+	Profiler = 0,
+	// Automation, Hio2 is used for connecting to CWAutomation program.
+	Automation = 1
+END
+
+// Player Settings is where you define various parameters for the final game that you will build in Unity. Some of these values are used in the Resolution Dialog that launches when you open a standalone game.
+CLASS PlayerSettings : UnityEngine.Object
+
+	// The name of your company.
+	CUSTOM_PROP static string companyName
+	{
+		return scripting_string_new(GetPlayerSettings ().GetCompanyName ());
+	}
+	{
+		GetPlayerSettings ().SetCompanyName (value);
+	}
+
+	// The name of your product.
+	CUSTOM_PROP static string productName
+	{
+		return scripting_string_new(GetPlayerSettings ().GetProductName ());
+	}
+	{
+		GetPlayerSettings ().SetProductName (value);
+	}
+
+	///
+	/// Uniquely identifies your product.
+	CSRAW public static Guid productGUID
+	{
+		get { return new Guid(productGUIDRaw); }
+	}
+
+	/// *undocumented*
+	CUSTOM_PROP private static byte[] productGUIDRaw
+	{
+		return CreateScriptingArray<UInt8>(reinterpret_cast<UInt8 const*>(GetPlayerSettings().GetEditorOnly().productGUID.data), 16, GetScriptingManager().GetCommonClasses().byte);
+	}
+
+	// Set the color space for the current project
+	CUSTOM_PROP static ColorSpace colorSpace
+	{
+		return GetPlayerSettings().GetDesiredColorSpace ();
+	}
+	{
+		GetPlayerSettings().SetDesiredColorSpace (value);
+	}
+
+	// Default horizontal dimension of stand-alone player window.
+	CUSTOM_PROP static int defaultScreenWidth
+	{
+		return GetPlayerSettings ().GetDefaultScreenWidth ();
+	}
+	{
+		GetPlayerSettings ().SetDefaultScreenWidth (value);
+	}
+
+	// Default vertical dimension of stand-alone player window.
+	CUSTOM_PROP static int defaultScreenHeight
+	{
+		return GetPlayerSettings ().GetDefaultScreenHeight ();
+	}
+	{
+		GetPlayerSettings ().SetDefaultScreenHeight (value);
+	}
+
+	// Default horizontal dimension of web player window.
+	CUSTOM_PROP static int defaultWebScreenWidth
+	{
+		return GetPlayerSettings ().GetDefaultWebScreenWidth ();
+	}
+	{
+		GetPlayerSettings ().SetDefaultWebScreenWidth (value);
+	}
+
+	// Default vertical dimension of web player window.
+	CUSTOM_PROP static int defaultWebScreenHeight
+	{
+		return GetPlayerSettings ().GetDefaultWebScreenHeight ();
+	}
+	{
+		GetPlayerSettings ().SetDefaultWebScreenHeight (value);
+	}
+
+	// Defines the behaviour of the Resolution Dialog on product launch.
+	CUSTOM_PROP static ResolutionDialogSetting displayResolutionDialog
+	{
+		return GetPlayerSettings ().GetDisplayResolutionDialog ();
+	}
+	{
+		GetPlayerSettings ().SetDisplayResolutionDialog (value);
+	}
+
+	// Returns whether or not the specified aspect ratio is enabled.
+	CUSTOM static bool HasAspectRatio (AspectRatio aspectRatio)
+	{
+		return GetPlayerSettings ().AspectRatioEnabled (aspectRatio);
+	}
+
+	// Enables the specified aspect ratio.
+	CUSTOM static void SetAspectRatio (AspectRatio aspectRatio, bool enable)
+	{
+		GetPlayerSettings ().SetAspectRatio (aspectRatio, enable);
+	}
+
+	// If enabled, the game will default to fullscreen mode.
+	CUSTOM_PROP static bool defaultIsFullScreen
+	{
+		return GetPlayerSettings ().GetDefaultIsFullScreen ();
+	}
+	{
+		GetPlayerSettings ().SetDefaultIsFullScreen (value);
+	}
+
+	// If enabled, the game will default to native resolution in fullscreen mode.
+	CUSTOM_PROP static bool defaultIsNativeResolution {
+		return GetPlayerSettings ().GetDefaultIsNativeResolution ();
+	}
+	{
+		GetPlayerSettings ().SetDefaultIsNativeResolution (value);
+	}
+
+	// If enabled, your game will continue to run after lost focus.
+	CUSTOM_PROP static bool runInBackground
+	{
+		return GetPlayerSettings ().GetRunInBackground ();
+	}
+	{
+		GetPlayerSettings ().SetRunInBackground (value);
+	}
+
+	// Defines if fullscreen games should darken secondary displays.
+	CUSTOM_PROP static bool captureSingleScreen
+	{
+		return GetPlayerSettings ().GetCaptureSingleScreen ();
+	}
+	{
+		GetPlayerSettings ().SetCaptureSingleScreen (value);
+	}
+
+	// Write a log file with debugging information.
+	CUSTOM_PROP static bool usePlayerLog
+	{
+		return GetPlayerSettings ().GetUsePlayerLog ();
+	}
+	{
+		GetPlayerSettings ().SetUsePlayerLog (value);
+	}
+
+	// Use resizable window in standalone player builds.
+	CUSTOM_PROP static bool resizableWindow
+	{
+		return GetPlayerSettings ().GetResizableWindow ();
+	}
+	{
+		GetPlayerSettings ().SetResizableWindow (value);
+	}
+
+	// Remove Physics code from player to save build size (Flash and NaCl only).
+	CUSTOM_PROP static bool stripPhysics
+	{
+		return GetPlayerSettings ().GetStripPhysics ();
+	}
+	{
+		GetPlayerSettings ().SetStripPhysics (value);
+	}
+
+
+	// Enable receipt validation for the Mac App Store.
+	CUSTOM_PROP static bool useMacAppStoreValidation
+	{
+		return GetPlayerSettings ().GetUseMacAppStoreValidation ();
+	}
+	{
+		GetPlayerSettings ().SetUseMacAppStoreValidation (value);
+	}
+
+	// Define how to handle fullscreen mode in Mac OS X standalones
+
+	CUSTOM_PROP static MacFullscreenMode macFullscreenMode
+	{
+		return GetPlayerSettings ().GetMacFullscreenMode ();
+	}
+	{
+		GetPlayerSettings ().SetMacFullscreenMode (value);
+	}
+
+	// Restrict standalone players to a single concurrent running instance.
+	CONDITIONAL ENABLE_SINGLE_INSTANCE_BUILD_SETTING
+	CUSTOM_PROP static bool forceSingleInstance
+	{
+		return GetPlayerSettings ().GetForceSingleInstance ();
+	}
+	{
+		GetPlayerSettings ().SetForceSingleInstance (value);
+	}
+
+	FLUSHCONDITIONS
+
+	OBSOLETE warning The option alwaysDisplayWatermark is deprecated and is always false.
+	CSRAW public static bool alwaysDisplayWatermark
+	{
+		get { return false; }
+		set { }
+	}
+
+	// First level to have access to all Resources.Load assets in Streamed Web Players.
+	CUSTOM_PROP static int firstStreamedLevelWithResources
+	{
+		return GetPlayerSettings ().GetFirstStreamedLevelWithResources ();
+	}
+	{
+		GetPlayerSettings ().SetFirstStreamedLevelWithResources (value);
+	}
+
+	// The image to display in the Resolution Dialog window.
+	CUSTOM_PROP static Texture2D resolutionDialogBanner
+	{
+		return Scripting::ScriptingWrapperFor (GetPlayerSettings ().GetResolutionDialogBanner ());
+	}
+	{
+		GetPlayerSettings ().SetResolutionDialogBanner (value.GetPtr ());
+	}
+
+	// The bundle identifier of the iPhone application.
+	CUSTOM_PROP static string iPhoneBundleIdentifier
+	{
+		return scripting_string_new(GetPlayerSettings ().GetiPhoneBundleIdentifier ());
+	}
+	{
+		GetPlayerSettings ().SetiPhoneBundleIdentifier (value);
+	}
+
+	// Returns the list of assigned icons for the specified platform.
+	CSRAW public static Texture2D[] GetIconsForTargetGroup (BuildTargetGroup platform)
+	{
+		Texture2D[] icons = GetIconsForPlatform (GetPlatformName (platform));
+		if (icons.Length == 0)
+			return new Texture2D[GetIconSizesForTargetGroup(platform).Length];
+		return icons;
+	}
+
+	// Note: If an empty list is returned, no icons are assigned specifically to the specified platform at this point,
+	CUSTOM internal static Texture2D[] GetIconsForPlatform (string platform)
+	{
+		return CreateScriptingArrayFromUnityObjects (GetPlayerSettings().GetPlatformIcons(platform), ClassID(Texture2D));
+	}
+
+	// Assign a list of icons for the specified platform.
+	CSRAW public static void SetIconsForTargetGroup (BuildTargetGroup platform, Texture2D[] icons)
+	{
+		SetIconsForPlatform (GetPlatformName (platform), icons);
+	}
+
+	CUSTOM internal static void SetIconsForPlatform (string platform, Texture2D[] icons)
+	{
+		std::vector<PPtr<Texture2D> > iconsVector;
+		MonoObjectArrayToPPtrVector (icons, iconsVector);
+		GetPlayerSettings ().SetPlatformIcons (platform, iconsVector);
+	}
+
+	// Returns a list of icon sizes for the specified platform.
+	CSRAW public static int[] GetIconSizesForTargetGroup (BuildTargetGroup platform)
+	{
+		return GetIconSizesForPlatform (GetPlatformName (platform));
+	}
+
+	CUSTOM internal static int[] GetIconSizesForPlatform (string platform)
+	{
+		std::vector<int> sizes = GetPlayerSettings().GetPlatformIconSizes(platform);
+		return CreateScriptingArray(&sizes[0], sizes.size(), GetMonoManager().GetCommonClasses().int_32);
+	}
+
+	CSRAW internal static string GetPlatformName (BuildTargetGroup targetGroup)
+	{
+		BuildPlayerWindow.BuildPlatform platform = BuildPlayerWindow.GetValidPlatforms().Find(p => p.targetGroup == targetGroup);
+		return (platform == null ? string.Empty : platform.name);
+	}
+
+	// Get the texture that will be used as the display icon at a specified size for the specified platform.
+	CUSTOM internal static Texture2D GetIconForPlatformAtSize (string platform, int size)
+	{
+		return Scripting::ScriptingWrapperFor (GetPlayerSettings().GetPlatformIconForSize(platform, size));
+	}
+
+	CUSTOM internal static void GetBatchingForPlatform (BuildTarget platform, out int staticBatching, out int dynamicBatching)
+	{
+		bool staticBatch = true, dynamicBatch = true;
+		GetPlayerSettings().GetPlatformBatching (platform, &staticBatch, &dynamicBatch);
+		*staticBatching = staticBatch;
+		*dynamicBatching = dynamicBatch;
+	}
+
+	CUSTOM internal static void SetBatchingForPlatform (BuildTarget platform, int staticBatching, int dynamicBatching)
+	{
+		GetPlayerSettings().SetPlatformBatching (platform, staticBatching, dynamicBatching);
+		SyncBuildSettingsLicensingAndActivePlatform();
+	}
+
+	CUSTOM_PROP internal static string webPlayerTemplate
+	{
+		return scripting_string_new(GetPlayerSettings ().GetWebPlayerTemplate ());
+	}
+	{
+		GetPlayerSettings ().SetWebPlayerTemplate (value.AsUTF8());
+	}
+
+	CUSTOM_PROP internal static string[] templateCustomKeys
+	{
+		return Scripting::StringVectorToMono (GetPlayerSettings ().GetTemplateCustomKeys ());
+	}
+	{
+		std::vector<std::string> keys;
+		StringMonoArrayToVector (value, keys);
+		GetPlayerSettings ().SetTemplateCustomKeys (keys);
+	}
+
+	CUSTOM internal static void SetTemplateCustomValue (string key, string value)
+	{
+		GetPlayerSettings ().SetTemplateCustomValue (key, value);
+	}
+
+	CUSTOM internal static string GetTemplateCustomValue (string key)
+	{
+		return scripting_string_new(GetPlayerSettings ().GetTemplateCustomValue (key));
+	}
+
+	CONDITIONAL ENABLE_SPRITES
+	CUSTOM_PROP internal static string spritePackerPolicy
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().spritePackerPolicy);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().spritePackerPolicy = value.AsUTF8();
+	}
+
+	// Get user-specified symbols for script compilation for the given build target group.
+	CUSTOM static string GetScriptingDefineSymbolsForGroup (BuildTargetGroup targetGroup)
+	{
+		 return scripting_string_new(GetPlayerSettings().GetEditorOnly().GetUserScriptingDefineSymbolsForGroup(targetGroup));
+	}
+
+	CSRAW internal static readonly char[] defineSplits = new[] {';',',',' '};
+
+	// Set user-specified symbols for script compilation for the given build target group.
+	CSRAW public static void SetScriptingDefineSymbolsForGroup (BuildTargetGroup targetGroup, string defines)
+	{
+		if (!string.IsNullOrEmpty (defines))
+			defines = string.Join (";", defines.Split (defineSplits, StringSplitOptions.RemoveEmptyEntries));
+		SetScriptingDefineSymbolsForGroupInternal (targetGroup, defines);
+	}
+
+	CUSTOM private static void SetScriptingDefineSymbolsForGroupInternal (BuildTargetGroup targetGroup, string defines)
+	{
+		 GetPlayerSettings().GetEditorOnlyForUpdate().SetUserScriptingDefineSymbolsForGroup(targetGroup, defines);
+	}
+
+	CUSTOM internal static void SetApiCompatibilityInternal (int value)
+	{
+		 GetPlayerSettings().SetAPICompatibilityLevel(value);
+		 GetPlayerSettings().GetEditorOnlyForUpdate().SetApiCompatibility(value);
+	}
+
+	// Password used for interacting with the Android Keystore.
+	CUSTOM_PROP static string keystorePass
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnlyNotPersistent().AndroidKeystorePass);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyNotPersistent().AndroidKeystorePass = value.AsUTF8();
+	}
+
+	// Password for the key used for signing an Android application.
+	CUSTOM_PROP static string keyaliasPass
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnlyNotPersistent().AndroidKeyaliasPass);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyNotPersistent().AndroidKeyaliasPass = value.AsUTF8();
+	}
+
+	// Xbox 360 title id
+	CUSTOM_PROP static string xboxTitleId
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().XboxTitleId);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().XboxTitleId = value.AsUTF8();
+	}
+
+	// Xbox 360 ImageXex override configuration file path
+	CUSTOM_PROP static string xboxImageXexFilePath
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().XboxImageXexPath);
+	}
+
+	// Xbox 360 SPA file path
+	CUSTOM_PROP static string xboxSpaFilePath
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().XboxSpaPath);
+	}
+
+	// Xbox 360 auto-generation of _SPAConfig.cs
+	CUSTOM_PROP static bool xboxGenerateSpa
+	{
+		return GetPlayerSettings().GetEditorOnly().XboxGenerateSpa;
+	}
+
+	// Xbox 360 Enable XboxLive guest accounts
+	CUSTOM_PROP static bool xboxEnableGuest
+	{
+		return GetPlayerSettings().GetXboxEnableGuest();
+	}
+
+	// Xbox 360 Kinect resource file deployment
+	CUSTOM_PROP static bool xboxDeployKinectResources
+	{
+		return GetPlayerSettings().GetEditorOnly().XboxDeployKinectResources;
+	}
+
+	// Xbox 360 Kinect Head Orientation file deployment
+	CUSTOM_PROP static bool xboxDeployKinectHeadOrientation
+	{
+		return GetPlayerSettings().GetEditorOnly().xboxDeployKinectHeadOrientation;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().xboxDeployKinectHeadOrientation = value;
+	}
+
+	// Xbox 360 Kinect Head Position file deployment
+	CUSTOM_PROP static bool xboxDeployKinectHeadPosition
+	{
+		return GetPlayerSettings().GetEditorOnly().xboxDeployKinectHeadPosition;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().xboxDeployKinectHeadPosition = value;
+	}
+
+	// Xbox 360 splash screen
+	CUSTOM_PROP static Texture2D xboxSplashScreen
+	{
+		return Scripting::ScriptingWrapperFor(GetPlayerSettings().GetEditorOnly().XboxSplashScreen);
+	}
+
+	CUSTOM_PROP static int xboxAdditionalTitleMemorySize
+	{
+		return GetPlayerSettings().GetEditorOnly().xboxAdditionalTitleMemorySize;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().xboxAdditionalTitleMemorySize = value;
+	}
+
+	// Xbox 360 Kinect title flag - if false, the Kinect APIs are inactive
+	CUSTOM_PROP static bool xboxEnableKinect
+	{
+		return GetPlayerSettings().GetXboxEnableKinect();
+	}
+
+	// Xbox 360 Kinect automatic skeleton tracking.
+	CUSTOM_PROP static bool xboxEnableKinectAutoTracking
+	{
+		return GetPlayerSettings().GetXboxEnableKinectAutoTracking();
+	}
+
+	// Xbox 360 Kinect Enable Speech Engine
+	CUSTOM_PROP static bool xboxEnableSpeech
+	{
+		return GetPlayerSettings().GetEditorOnly().xboxEnableSpeech;
+	}
+
+	// Xbox 360 Kinect Speech DB
+	CUSTOM_PROP static UInt32 xboxSpeechDB
+	{
+		return GetPlayerSettings().GetXboxSpeechDB();
+	}
+
+	CUSTOM_PROP static bool gpuSkinning
+	{
+		return GetPlayerSettings().GetGPUSkinning();
+	}
+
+	// Xbox 360 Pix Texture Capture
+	CUSTOM_PROP static bool xboxPIXTextureCapture
+	{
+		return GetPlayerSettings().GetXboxPIXTextureCapture();
+	}
+
+	// Xbox 360 Avatars
+	CUSTOM_PROP static bool xboxEnableAvatar
+	{
+		return GetPlayerSettings().GetXboxEnableAvatar();
+	}
+
+	// PS3 Title Config file
+	CUSTOM_PROP static string ps3TitleConfigPath
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().ps3TitleConfigPath);
+	}
+
+	// PS3 DLC Config file
+	CUSTOM_PROP static string ps3DLCConfigPath
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().ps3DLCConfigPath);
+	}
+
+	// PS3 Thumbnail Image
+	CUSTOM_PROP static string ps3ThumbnailPath
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().ps3ThumbnailPath);
+	}
+
+	// PS3 Background Image
+	CUSTOM_PROP static string ps3BackgroundPath
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().ps3BackgroundPath);
+	}
+
+	// PS3 Background Sound
+	CUSTOM_PROP static string ps3SoundPath
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().ps3SoundPath);
+	}
+
+	// PS3 NP Communication ID
+	CUSTOM_PROP static string ps3TrophyCommId
+	{
+		return MonoStringNew(GetPlayerSettings().GetEditorOnly().ps3TrophyCommId);
+	}
+
+
+	// PS3 NP Communication Passphrase
+	CUSTOM_PROP static string ps3NpCommunicationPassphrase
+	{
+		return MonoStringNew(GetPlayerSettings().GetEditorOnly().ps3NpCommunicationPassphrase);
+	}
+
+	// PS3 NP Communication Signature
+	CUSTOM_PROP static string ps3TrophyCommSig
+	{
+		return MonoStringNew(GetPlayerSettings().GetEditorOnly().ps3TrophyCommSig);
+	}
+
+	// PS3 Trophy Package
+	CUSTOM_PROP static string ps3TrophyPackagePath
+	{
+		return MonoStringNew(GetPlayerSettings().GetEditorOnly().ps3TrophyPackagePath);
+	}
+
+	// PS3 Bootcheck maximum savegame size ( as per TRC R224 ). This should include the total estimated size for the savegames (including icon sizes)
+	CUSTOM_PROP static int ps3BootCheckMaxSaveGameSizeKB
+	{
+		return GetPlayerSettings().GetEditorOnly().ps3BootCheckMaxSaveGameSizeKB;
+	}
+
+	// PS3 Title is Trial
+	CUSTOM_PROP static bool ps3TrialMode
+	{
+		return GetPlayerSettings().GetEditorOnly().ps3TrialMode;
+	}
+
+	// PS3 Save Game slots
+	CUSTOM_PROP static int ps3SaveGameSlots
+	{
+		return GetPlayerSettings().GetEditorOnly().ps3SaveGameSlots;
+	}
+
+	// Application bundle identifier shared between iOS & Android platforms
+	CUSTOM_PROP static string bundleIdentifier
+	{
+		 return scripting_string_new(GetPlayerSettings().GetiPhoneBundleIdentifier());
+	}
+	{
+		 GetPlayerSettings().SetiPhoneBundleIdentifier(value);
+	}
+
+	// Application bundle version shared between iOS & Android platforms
+	CUSTOM_PROP static string bundleVersion
+	{
+		 return scripting_string_new(GetPlayerSettings().GetiPhoneBundleVersion());
+	}
+	{
+		 GetPlayerSettings().SetiPhoneBundleVersion(value);
+	}
+
+	// Should status bar be hidden. Shared between iOS & Android platforms
+	CUSTOM_PROP static bool	statusBarHidden
+	{
+		return GetPlayerSettings ().GetUIStatusBarHidden ();
+	}
+	{
+		GetPlayerSettings ().SetUIStatusBarHidden (value);
+	}
+
+	// Managed code stripping level
+	CUSTOM_PROP static StrippingLevel strippingLevel
+	{
+		return GetStrippingLevelForTarget(GetEditorUserBuildSettings().GetActiveBuildTarget());
+	}
+	{
+		SetStrippingLevelForTarget (GetEditorUserBuildSettings().GetActiveBuildTarget(), value);
+	}
+
+	// Default screen orientation for mobiles
+	CUSTOM_PROP static UIOrientation defaultInterfaceOrientation
+	{
+		return GetPlayerSettings().GetDefaultScreenOrientation();
+	}
+	{
+		GetPlayerSettings().SetDefaultScreenOrientation(value);
+	}
+
+	// Is auto-rotation to portrait supported?
+	CUSTOM_PROP static bool allowedAutorotateToPortrait
+	{
+		return GetPlayerSettings().GetAutoRotationAllowed(0);
+	}
+	{
+		GetPlayerSettings().SetAutoRotationAllowed(0, value);
+	}
+
+	// Is auto-rotation to portrait upside-down supported?
+	CUSTOM_PROP static bool allowedAutorotateToPortraitUpsideDown
+	{
+		return GetPlayerSettings().GetAutoRotationAllowed(1);
+	}
+	{
+		GetPlayerSettings().SetAutoRotationAllowed(1, value);
+	}
+
+	// Is auto-rotation to landscape right supported?
+	CUSTOM_PROP static bool allowedAutorotateToLandscapeRight
+	{
+		return GetPlayerSettings().GetAutoRotationAllowed(2);
+	}
+	{
+		GetPlayerSettings().SetAutoRotationAllowed(2, value);
+	}
+
+	// Is auto-rotation to landscape left supported?
+	CUSTOM_PROP static bool allowedAutorotateToLandscapeLeft
+	{
+		return GetPlayerSettings().GetAutoRotationAllowed(3);
+	}
+	{
+		GetPlayerSettings().SetAutoRotationAllowed(3, value);
+	}
+	// Let the OS autorotate the screen as the device orientation changes.
+	CUSTOM_PROP static bool useAnimatedAutorotation
+	{
+		return GetPlayerSettings().GetUseAnimatedAutoRotation();
+	}
+	{
+		GetPlayerSettings().SetUseAnimatedAutoRotation(value);
+	}
+
+	// 32-bit Display Buffer is used
+	CUSTOM_PROP static bool	use32BitDisplayBuffer
+	{
+		return GetPlayerSettings().GetUse32BitDisplayBuffer();
+	}
+	{
+		GetPlayerSettings().SetUse32BitDisplayBuffer(value);
+	}
+
+	// Target GLES graphics level (ios/android)
+	CUSTOM_PROP static TargetGlesGraphics targetGlesGraphics
+	{
+		return GetPlayerSettings().GetTargetGlesGraphics();
+	}
+	{
+		GetPlayerSettings().SetTargetGlesGraphics(value);
+	}
+
+	// .NET API compatibility level
+	CUSTOM_PROP static ApiCompatibilityLevel apiCompatibilityLevel
+	{
+		 return GetPlayerSettings().GetAPICompatibilityLevel();
+	}
+	{
+		 GetPlayerSettings().SetAPICompatibilityLevel(value);
+	}
+
+	// Should unused [[Mesh]] components be excluded from game build?
+	CUSTOM_PROP static bool stripUnusedMeshComponents
+	{
+		return GetPlayerSettings().GetStripUnusedMeshComponents();
+	}
+	{
+		GetPlayerSettings().SetStripUnusedMeshComponents (value);
+	}
+
+	// Is the advanced version being used?
+	CUSTOM_PROP static bool	advancedLicense
+	{
+		return GetBuildSettings().hasAdvancedVersion; ///@TODO: MAKE THIS A SINGLE PROPERTY!
+	}
+
+	// Additional AOT compilation options. Shared by AOT platforms.
+	CUSTOM_PROP static string aotOptions
+	{
+		 return scripting_string_new(GetPlayerSettings().GetAotOptions());
+	}
+	{
+		 GetPlayerSettings().SetAotOptions(value);
+	}
+
+	// Accelerometer update frequency
+	CUSTOM_PROP static int accelerometerFrequency
+	{
+		return GetPlayerSettings().GetAccelerometerFrequency();
+	}
+	{
+		GetPlayerSettings().SetAccelerometerFrequency(value);
+	}
+
+	// Is multi-threaded rendering enabled?
+	CUSTOM_PROP static bool MTRendering
+	{
+		return GetPlayerSettings().GetMTRendering();
+	}
+	{
+		GetPlayerSettings().SetMTRendering(value);
+	}
+	CUSTOM_PROP static bool mobileMTRendering
+	{
+		return GetPlayerSettings().GetMobileMTRendering();
+	}
+	{
+		GetPlayerSettings().SetMobileMTRendering(value);
+	}
+
+	// Which rendering path is enabled?
+	CUSTOM_PROP static RenderingPath renderingPath
+	{
+		return GetPlayerSettings().GetRenderingPath();
+	}
+	{
+		GetPlayerSettings().SetRenderingPath(value);
+	}
+	CUSTOM_PROP static RenderingPath mobileRenderingPath
+	{
+		return GetPlayerSettings().GetMobileRenderingPath();
+	}
+	{
+		GetPlayerSettings().SetMobileRenderingPath(value);
+	}
+
+
+	// Should Direct3D 11 be used when available?
+	CUSTOM_PROP static bool useDirect3D11
+	{
+		return GetPlayerSettings().GetUseDX11();
+	}
+	{
+		GetPlayerSettings().SetUseDX11(value);
+	}
+
+// Wii specific player settings
+CLASS Wii
+
+	// Wii region.
+	CUSTOM_PROP static WiiRegion region
+	{
+		// Should be changed to enum probably
+		return GetPlayerSettings().GetEditorOnly().wiiRegion;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiRegion = value;
+	}
+
+	// Wii game code.
+	CUSTOM_PROP static string gameCode
+	{
+		return MonoStringNew(GetPlayerSettings().GetEditorOnly().wiiGameCode);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiGameCode = value.AsUTF8();
+	}
+
+	// Wii game version.
+	CUSTOM_PROP static string gameVersion
+	{
+		return MonoStringNew(GetPlayerSettings().GetEditorOnly().wiiGameVersion);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiGameVersion = value.AsUTF8();
+	}
+
+	// Wii company code.
+	CUSTOM_PROP static string companyCode
+	{
+		return MonoStringNew(GetPlayerSettings().GetEditorOnly().wiiCompanyCode);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiCompanyCode = value.AsUTF8();
+	}
+
+	// Does Wii support Nunchuk?
+	CUSTOM_PROP static bool supportsNunchuk
+	{
+		return GetPlayerSettings().GetEditorOnly().wiiSupportsNunchuk != 0;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiSupportsNunchuk = value ? 1 : 0;
+	}
+
+	// Does Wii support Classic Controller?
+	CUSTOM_PROP static bool supportsClassicController
+	{
+		return GetPlayerSettings().GetEditorOnly().wiiSupportsClassicController != 0;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiSupportsClassicController = value ? 1 : 0;
+	}
+
+	// Does Wii support Balance Board?
+	CUSTOM_PROP static bool supportsBalanceBoard
+	{
+		return GetPlayerSettings().GetEditorOnly().wiiSupportsBalanceBoard != 0;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiSupportsBalanceBoard = value ? 1 : 0;
+	}
+
+	// Does Wii support Motion Plus?
+	CUSTOM_PROP static bool supportsMotionPlus
+	{
+		return GetPlayerSettings().GetEditorOnly().wiiSupportsMotionPlus != 0;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiSupportsMotionPlus = value ? 1 : 0;
+	}
+
+	// The number of controllers supported by the game.
+	CUSTOM_PROP static uint controllerCount
+	{
+		return GetPlayerSettings().GetEditorOnly().wiiControllerCount;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiControllerCount = value;
+	}
+
+	// Are floating point exceptions enabled on Wii?
+	CUSTOM_PROP static bool floatingPointExceptions
+	{
+		return GetPlayerSettings().GetEditorOnly().wiiFloatingPointExceptions;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiFloatingPointExceptions = value ? 1 : 0;
+	}
+	// Are screen crash dumps enabled on Wii?
+	CUSTOM_PROP static bool screenCrashDumps
+	{
+		return GetPlayerSettings().GetEditorOnly().wiiScreenCrashDumps;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().wiiScreenCrashDumps = value ? 1 : 0;
+	}
+
+	// Wii Hio2 Usage.
+	CUSTOM_PROP static WiiHio2Usage hio2Usage
+	{
+		// Should be changed to enum probably
+		return GetPlayerSettings().wiiHio2Usage;
+	}
+	{
+		GetPlayerSettings().wiiHio2Usage = value;
+	}
+
+END
+
+// Android specific player settings
+CLASS Android
+
+	// 24-bit Depth Buffer is used
+	CUSTOM_PROP static bool	use24BitDepthBuffer
+	{
+		return GetPlayerSettings().GetUse24BitDepthBuffer();
+	}
+	{
+		GetPlayerSettings().SetUse24BitDepthBuffer(value);
+	}
+
+	// Android bundle version code
+	CUSTOM_PROP static int	bundleVersionCode
+	{
+		 return GetPlayerSettings().GetAndroidBundleVersionCode();
+	}
+	{
+		 GetPlayerSettings().SetAndroidBundleVersionCode(value);
+	}
+
+	// Minimal Android SDK version
+	CUSTOM_PROP static AndroidSdkVersions minSdkVersion
+	{
+		return GetPlayerSettings ().GetAndroidMinSdkVersion ();
+	}
+	{
+		GetPlayerSettings ().SetAndroidMinSdkVersion (value);
+	}
+
+	// Preferred application install location
+	CUSTOM_PROP static AndroidPreferredInstallLocation preferredInstallLocation
+	{
+		return GetPlayerSettings ().GetAndroidPreferredInstallLocation ();
+	}
+	{
+		GetPlayerSettings ().SetAndroidPreferredInstallLocation (value);
+	}
+
+	// Force internet permission flag
+	CUSTOM_PROP static bool	forceInternetPermission
+	{
+		 return GetPlayerSettings().GetForceAndroidInternetPermission();
+	}
+	{
+		 GetPlayerSettings().SetForceAndroidInternetPermission(value);
+	}
+
+	// Force SD card permission
+	CUSTOM_PROP static bool	forceSDCardPermission
+	{
+		 return GetPlayerSettings().GetForceAndroidSDCardPermission();
+	}
+	{
+		 GetPlayerSettings().SetForceAndroidSDCardPermission(value);
+	}
+
+	//*undocumented*
+	// only available in developer builds for now.
+	CUSTOM_PROP internal static bool createWallpaper
+	{
+		 return GetPlayerSettings().GetCreateAndroidWallpaper();
+	}
+	{
+		 GetPlayerSettings().SetCreateAndroidWallpaper(value);
+	}
+
+	// Android target device
+	CUSTOM_PROP static AndroidTargetDevice targetDevice
+	{
+		 return GetPlayerSettings().GetAndroidTargetDevice();
+	}
+	{
+		 GetPlayerSettings().SetAndroidTargetDevice(value);
+	}
+
+	// Android splash screen scale mode
+	CUSTOM_PROP static AndroidSplashScreenScale splashScreenScale
+	{
+		 return GetPlayerSettings().GetAndroidSplashScreenScale();
+	}
+	{
+		 GetPlayerSettings().SetAndroidSplashScreenScale(value);
+	}
+
+	// Android keystore name
+	CUSTOM_PROP static string keystoreName
+	{
+		return scripting_string_new(GetPlayerSettings().GetAndroidKeystoreName());
+	}
+	{
+		GetPlayerSettings().SetAndroidKeystoreName(value);
+	}
+
+	// Android keystore password
+	CUSTOM_PROP static string keystorePass
+	{
+		return scripting_string_new(GetPlayerSettings().GetAndroidKeystorePass());
+	}
+	{
+		GetPlayerSettings().SetAndroidKeystorePass(value);
+	}
+
+	// Android key alias name
+	CUSTOM_PROP static string keyaliasName
+	{
+		return scripting_string_new(GetPlayerSettings().GetAndroidKeyaliasName());
+	}
+	{
+		GetPlayerSettings().SetAndroidKeyaliasName(value);
+	}
+
+	// Android key alias password
+	CUSTOM_PROP static string keyaliasPass
+	{
+		return scripting_string_new(GetPlayerSettings().GetAndroidKeyaliasPass());
+	}
+	{
+		GetPlayerSettings().SetAndroidKeyaliasPass(value);
+	}
+
+	// License verification flag
+	CUSTOM_PROP static bool	licenseVerification
+	{
+		return GetPlayerSettings().GetAndroidLicenseVerification();
+	}
+
+	// Use APK Expansion Files
+	CUSTOM_PROP static bool useAPKExpansionFiles
+	{
+		 return GetPlayerSettings().GetUseAPKExpansionFiles();
+	}
+	{
+		 GetPlayerSettings().SetUseAPKExpansionFiles(value);
+	}
+
+	// Application should show ActivityIndicator when loading
+	CUSTOM_PROP static AndroidShowActivityIndicatorOnLoading showActivityIndicatorOnLoading
+	{
+		 return GetPlayerSettings().GetAndroidShowActivityIndicatorOnLoading();
+	}
+	{
+		 GetPlayerSettings().SetAndroidShowActivityIndicatorOnLoading(value);
+	}
+
+END
+
+// iOS specific player settings
+CLASS iOS
+
+	// iOS application display name
+	CUSTOM_PROP static string	applicationDisplayName
+	{
+		return scripting_string_new(GetPlayerSettings().GetProductName());
+	}
+	{
+		GetPlayerSettings().SetProductName(value);
+	}
+
+	// Script calling optimization
+	CUSTOM_PROP static ScriptCallOptimizationLevel	scriptCallOptimization
+	{
+	 	return GetPlayerSettings().GetiPhoneScriptCallOptimization();
+	}
+	{
+	 	GetPlayerSettings().SetiPhoneScriptCallOptimization(value);
+	}
+
+	// Active iOS SDK version used for build
+	CUSTOM_PROP static iOSSdkVersion sdkVersion
+	{
+		 return GetPlayerSettings().GetiPhoneSdkVersion();
+	}
+	{
+		 GetPlayerSettings().SetiPhoneSdkVersion(value);
+	}
+
+	// Deployment minimal version of iOS
+	CUSTOM_PROP static iOSTargetOSVersion targetOSVersion
+	{
+		 return GetPlayerSettings().GetiPhoneTargetOSVersion();
+	}
+	{
+		 GetPlayerSettings().SetiPhoneTargetOSVersion(value);
+	}
+
+	// Targeted device
+	CUSTOM_PROP static iOSTargetDevice	targetDevice
+	{
+		return GetPlayerSettings().GetTargetDevice();
+	}
+	{
+		GetPlayerSettings().SetTargetDevice(value);
+	}
+
+	// Targeted resolution
+	CUSTOM_PROP static iOSTargetResolution	targetResolution
+	{
+		return GetPlayerSettings().GetTargetResolution();
+	}
+	{
+		GetPlayerSettings().SetTargetResolution(value);
+	}
+
+	// Icon is prerendered
+	CUSTOM_PROP static bool	prerenderedIcon
+	{
+		 return GetPlayerSettings().GetUIPrerenderedIcon();
+	}
+	{
+		 GetPlayerSettings().SetUIPrerenderedIcon(value);
+	}
+
+	// Application requires persistent WiFi
+	CUSTOM_PROP static bool	requiresPersistentWiFi
+	{
+		 return GetPlayerSettings().GetUIRequiresPersistentWiFi();
+	}
+	{
+		 GetPlayerSettings().SetUIRequiresPersistentWiFi(value);
+	}
+
+	// Status bar style
+	CUSTOM_PROP static iOSStatusBarStyle statusBarStyle
+	{
+		 return GetPlayerSettings().GetUIStatusBarStyle();
+	}
+	{
+		 GetPlayerSettings().SetUIStatusBarStyle(value);
+	}
+
+	// Application should exit when suspended to background
+	CUSTOM_PROP static bool exitOnSuspend
+	{
+		 return GetPlayerSettings().GetUIExitOnSuspend();
+	}
+	{
+		 GetPlayerSettings().SetUIExitOnSuspend(value);
+	}
+
+	// Application should show ActivityIndicator when loading
+	CUSTOM_PROP static iOSShowActivityIndicatorOnLoading showActivityIndicatorOnLoading
+	{
+		 return GetPlayerSettings().GetIOSShowActivityIndicatorOnLoading();
+	}
+	{
+		 GetPlayerSettings().SetIOSShowActivityIndicatorOnLoading(value);
+	}
+
+END
+
+// *undocumented*
+ENUM MetroApplicationShowName
+
+	// *undocumented*
+	NotSet = 0,
+
+	// *undocumented*
+	AllLogos = 1,
+
+	// *undocumented*
+	NoLogos = 2,
+
+	// *undocumented*
+	StandardLogoOnly = 3,
+
+	// *undocumented*
+	WideLogoOnly = 4,
+
+END
+// *undocumented*
+ENUM MetroApplicationForegroundText
+
+	// *undocumented*
+	//notSet = 0,
+
+	// *undocumented*
+	Light = 1,
+
+	// *undocumented*
+	Dark = 2,
+
+END
+
+/// *undocumented*
+ENUM MetroCompilationOverrides
+
+	/// *undocumented*
+	None = 0,
+
+	/// *undocumented*
+	UseNetCore = 1,
+
+	/// *undocumented*
+	UseNetCorePartially = 2
+END
+
+ENUM MetroCapability
+	// *undocumented*
+	EnterpriseAuthentication = 0,
+	// *undocumented*
+	InternetClient = 1,
+	// *undocumented*
+	InternetClientServer = 2,
+	// *undocumented*
+	MusicLibrary = 3,
+	// *undocumented*
+	PicturesLibrary = 4,
+	// *undocumented*
+	PrivateNetworkClientServer = 5,
+	// *undocumented*
+	RemovableStorage = 6,
+	// *undocumented*
+	SharedUserCertificates = 7,
+	// *undocumented*
+	VideosLibrary = 8,
+	// *undocumented*
+	WebCam = 9,
+	// *undocumented*
+	Proximity = 10,
+	// *undocumented*
+	Microphone = 11,
+	// *undocumented*
+	Location = 12
+END
+
+// *undocumented*
+CLASS Metro
+
+	// *undocumented*
+	CUSTOM_PROP static string packageName
+	{
+		std::string package = GetPlayerSettings().GetEditorOnly().metroPackageName;
+		if (package.size() == 0) package = GetPlayerSettings ().GetProductName ();
+		return scripting_string_new(package);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroPackageName = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string packageLogo
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroPackageLogo);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroPackageLogo = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CSRAW public static System.Version packageVersion
+	{
+		get
+		{
+			try
+			{
+				#if INCLUDE_METROSUPPORT
+				return new System.Version(PlayerSettingsEditor.ValidateMetroPackageVersion(packageVersionRaw));
+				#else
+				return new System.Version (1, 0, 0, 0);
+				#endif
+			}
+			catch (Exception ex)
+			{
+				throw new Exception(string.Format("{0}, the raw string was {1}", ex.Message, packageVersionRaw));
+			}
+		}
+		set { packageVersionRaw = value.ToString(); }
+	}
+
+	// *undocumented*
+	CUSTOM_PROP private static string packageVersionRaw
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroPackageVersion);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroPackageVersion = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP public static string commandLineArgsFile
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroCommandLineArgsFile);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroCommandLineArgsFile = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string certificatePath
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroCertificatePath);
+	}
+
+	// *undocumented*
+	CUSTOM_PROP internal static string certificatePassword
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		return scripting_string_new(InsecureScramblePassword(settings.metroCertificatePassword, settings.metroCertificatePath));
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string certificateSubject
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.metroCertificateSubject.empty())
+			return scripting_string_new(settings.metroCertificateSubject);
+		else
+			return SCRIPTING_NULL;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string certificateIssuer
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.metroCertificateIssuer.empty())
+			return scripting_string_new(settings.metroCertificateIssuer);
+		else
+			return SCRIPTING_NULL;
+	}
+
+	// *undocumented*
+	CSRAW public static System.DateTime? certificateNotAfter
+	{
+		get
+		{
+			long value = certificateNotAfterRaw;
+			if (value != 0)
+				return System.DateTime.FromFileTime(value);
+			else
+				return null;
+		}
+	}
+
+	// *undocumented*
+	CUSTOM_PROP private static long certificateNotAfterRaw
+	{
+		return GetPlayerSettings().GetEditorOnly().metroCertificateNotAfter;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string applicationDescription
+	{
+		std::string desc = GetPlayerSettings().GetEditorOnly().metroApplicationDescription;
+		if (desc.size() == 0) desc = GetPlayerSettings ().GetProductName ();
+		return scripting_string_new(desc);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroApplicationDescription = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string tileLogo
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroTileLogo);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroTileLogo = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string tileWideLogo
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroTileWideLogo);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroTileWideLogo = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string tileSmallLogo
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroTileSmallLogo);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroTileSmallLogo = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string tileShortName
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroTileShortName);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroTileShortName = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static MetroApplicationShowName tileShowName
+	{
+		return GetPlayerSettings().GetEditorOnly().metroTileShowName;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroTileShowName = value;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static MetroCompilationOverrides compilationOverrides
+	{
+		return GetPlayerSettings().GetEditorOnly().metroCompilationOverrides;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroCompilationOverrides = value;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static MetroApplicationForegroundText tileForegroundText
+	{
+		return GetPlayerSettings().GetEditorOnly().metroTileForegroundText;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroTileForegroundText = value;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static Color tileBackgroundColor
+	{
+		return GetPlayerSettings().GetEditorOnly().metroTileBackgroundColor;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroTileBackgroundColor = value;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string splashScreenImage
+	{
+		return scripting_string_new(GetPlayerSettings().GetEditorOnly().metroSplashScreenImage);
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroSplashScreenImage = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CSRAW public static Color? splashScreenBackgroundColor
+	{
+		get
+		{
+			if (splashScreenUseBackgroundColor)
+				return splashScreenBackgroundColorRaw;
+			else
+				return null;
+		}
+		set
+		{
+			splashScreenUseBackgroundColor = value.HasValue;
+			if (value.HasValue)
+				splashScreenBackgroundColorRaw = value.Value;
+		}
+	}
+
+	// *undocumented*
+	CUSTOM_PROP private static bool splashScreenUseBackgroundColor
+	{
+		return GetPlayerSettings().GetEditorOnly().metroSplashScreenUseBackgroundColor;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroSplashScreenUseBackgroundColor = value;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP private static Color splashScreenBackgroundColorRaw
+	{
+		return GetPlayerSettings().GetEditorOnly().metroSplashScreenBackgroundColor;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().metroSplashScreenBackgroundColor = value;
+	}
+
+	// *undocumented*
+	CSRAW public static void SetCapability (MetroCapability capability, bool enabled)
+	{
+		InternalSetCapability(capability.ToString(), enabled);
+	}
+	// *undocumented*
+	CSRAW public static bool GetCapability (MetroCapability capability)
+	{
+		return InternalGetCapability(capability.ToString());
+	}
+
+	CUSTOM private static void InternalSetCapability (string name, bool enabled)
+	{
+		GetPlayerSettings ().GetEditorOnlyForUpdate().SetMetroCapability (name, enabled);
+	}
+
+	CUSTOM private static bool InternalGetCapability (string name)
+	{
+		return GetPlayerSettings ().GetEditorOnly().GetMetroCapability (name);
+	}
+END
+
+// BlackBerry specific player settings
+CLASS BlackBerry
+
+	/// The network address of the BlackBerry device to install and run the device on
+	CUSTOM_PROP static string	deviceAddress
+	{
+		return MonoStringNew(GetPlayerSettings().GetBlackBerryDeviceAddress());
+	}
+	{
+		GetPlayerSettings().SetBlackBerryDeviceAddress(value);
+	}
+
+	// The BlackBerry device password to allow access
+	CUSTOM_PROP static string	devicePassword
+	{
+		return MonoStringNew(GetPlayerSettings().GetBlackBerryDevicePassword());
+	}
+	{
+		GetPlayerSettings().SetBlackBerryDevicePassword(value);
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string tokenPath
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.blackberryTokenPath.empty())
+			return scripting_string_new(settings.blackberryTokenPath);
+		else
+			return SCRIPTING_NULL;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryTokenPath = value.AsUTF8();;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string tokenExpires
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.blackberryTokenExires.empty())
+			return scripting_string_new(settings.blackberryTokenExires);
+		else
+			return SCRIPTING_NULL;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryTokenExires = value.AsUTF8();;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string tokenAuthor
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.blackberryTokenAuthor.empty())
+			return scripting_string_new(settings.blackberryTokenAuthor);
+		else
+			return SCRIPTING_NULL;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryTokenAuthor = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string tokenAuthorId
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.blackberryTokenAuthorId.empty())
+			return scripting_string_new(settings.blackberryTokenAuthorId);
+		else
+			return SCRIPTING_NULL;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryTokenAuthorId = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string authorId
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.blackberryAuthorId.empty())
+			return scripting_string_new(settings.blackberryAuthorId);
+		else
+			return SCRIPTING_NULL;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryAuthorId = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM static void SetAuthorIDOverride (bool enable)
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryAuthorIdOveride = enable;
+	}
+
+	// *undocumented*
+	CUSTOM static bool IsAuthorIDOverride ()
+	{
+		return GetPlayerSettings().GetEditorOnly().blackberryAuthorIdOveride;
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string cskPassword
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.blackberryCskPassword.empty())
+			return scripting_string_new(settings.blackberryCskPassword);
+		else
+			return SCRIPTING_NULL;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryCskPassword = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string saveLogPath
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.blackberrySaveLogPath.empty())
+			return scripting_string_new(settings.blackberrySaveLogPath);
+		else
+			return SCRIPTING_NULL;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberrySaveLogPath = value.AsUTF8();
+	}
+
+	// *undocumented*
+	CUSTOM static bool HasSharedPermissions ()
+	{
+		return GetPlayerSettings().GetEditorOnly().blackberrySharedPermissions;
+	}
+
+	// *undocumented*
+	CUSTOM static void SetSharedPermissions (bool enable)
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberrySharedPermissions = enable;
+	}
+
+	// *undocumented*
+	CUSTOM static bool HasCameraPermissions ()
+	{
+		return GetPlayerSettings().GetEditorOnly().blackberryCameraPermissions;
+	}
+
+	// *undocumented*
+	CUSTOM static void SetCameraPermissions (bool enable)
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryCameraPermissions = enable;
+	}
+
+	// *undocumented*
+	CUSTOM static bool HasGPSPermissions ()
+	{
+		return GetPlayerSettings().GetEditorOnly().blackberryGPSPermissions;
+	}
+
+	// *undocumented*
+	CUSTOM static void SetGPSPermissions (bool enable)
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryGPSPermissions = enable;
+	}
+
+	// *undocumented*
+	CUSTOM static bool HasIdentificationPermissions ()
+	{
+		return GetPlayerSettings().GetEditorOnly().blackberryDeviceIDPermissions;
+	}
+
+	// *undocumented*
+	CUSTOM static void SetIdentificationPermissions (bool enable)
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryDeviceIDPermissions = enable;
+	}
+
+	// *undocumented*
+	CUSTOM static bool HasMicrophonePermissions ()
+	{
+		return GetPlayerSettings().GetEditorOnly().blackberryMicrophonePermissions;
+	}
+
+	// *undocumented*
+	CUSTOM static void SetMicrophonePermissions (bool enable)
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryMicrophonePermissions = enable;
+	}
+
+	// *undocumented*
+	CUSTOM static bool HasGamepadSupport ()
+	{
+		return GetPlayerSettings().GetEditorOnly().blackberryGamepadSupport;
+	}
+
+	// *undocumented*
+	CUSTOM static void SetGamepadSupport (bool enable)
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().blackberryGamepadSupport = enable;
+	}
+
+END
+
+CLASS Tizen
+
+	///
+	CUSTOM_PROP static string	productDescription
+	{
+		return MonoStringNew(GetPlayerSettings().GetTizenProductDescription());
+	}
+	{
+		GetPlayerSettings().SetTizenProductDescription(value);
+	}
+
+	///
+	CUSTOM_PROP static string	productURL
+	{
+		return MonoStringNew(GetPlayerSettings().GetTizenProductURL());
+	}
+	{
+		GetPlayerSettings().SetTizenProductURL(value);
+	}
+
+	///
+	CUSTOM_PROP static string	certificatePath
+	{
+		return MonoStringNew(GetPlayerSettings().GetTizenCertificatePath());
+	}
+	{
+		GetPlayerSettings().SetTizenCertificatePath(value);
+	}
+
+	///
+	CUSTOM_PROP static string	certificatePassword
+	{
+		return MonoStringNew(GetPlayerSettings().GetTizenCertificatePassword());
+	}
+	{
+		GetPlayerSettings().SetTizenCertificatePassword(value);
+	}
+
+	// *undocumented*
+	CUSTOM_PROP static string saveLogPath
+	{
+		EditorOnlyPlayerSettings const& settings = GetPlayerSettings().GetEditorOnly();
+		if (!settings.tizenSaveLogPath.empty())
+			return scripting_string_new(settings.tizenSaveLogPath);
+		else
+			return SCRIPTING_NULL;
+	}
+	{
+		GetPlayerSettings().GetEditorOnlyForUpdate().tizenSaveLogPath = value.AsUTF8();
+	}
+END
+END
+
+CSRAW }

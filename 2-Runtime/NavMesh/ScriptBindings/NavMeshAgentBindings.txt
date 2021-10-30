@@ -1,0 +1,263 @@
+C++RAW
+#include "UnityPrefix.h"
+#include "Configuration/UnityConfigure.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/NavMesh/NavMesh.h"
+#include "Runtime/NavMesh/NavMeshAgent.h"
+#include "Runtime/NavMesh/OffMeshLink.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+
+CSRAW
+
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace UnityEngine
+{
+
+// Keep this enum in sync with the one defined in "NavMeshTypes.h"
+ENUM ObstacleAvoidanceType
+	// Disable avoidance.
+	NoObstacleAvoidance = 0,
+
+	// Enable simple avoidance. Low performance impact.
+	LowQualityObstacleAvoidance = 1,
+
+	// Medium avoidance. Medium performance impact
+	MedQualityObstacleAvoidance = 2,
+
+	// Good avoidance. High performance impact
+	GoodQualityObstacleAvoidance = 3,
+
+	// Enable highest precision. Highest performance impact.
+	HighQualityObstacleAvoidance = 4
+END
+
+
+
+// Navigation mesh agent.
+CLASS NavMeshAgent : Behaviour
+
+	// Sets or updates the destination. This triggers calculation for a new path.
+	CUSTOM bool SetDestination (Vector3 target)
+	{
+		return self->SetDestination (target);
+	}
+
+	// Destination to navigate towards.
+	AUTO_PROP Vector3 destination GetDestination SetDestination
+
+	// Stop within this distance from the target position.
+	AUTO_PROP float stoppingDistance GetStoppingDistance SetStoppingDistance
+
+	// The current velocity of the [[NavMeshAgent]] component.
+	AUTO_PROP Vector3 velocity GetVelocity SetVelocity
+
+	// The next position on the path.
+	AUTO_PROP Vector3 nextPosition GetNextPosition SetInternalAgentPosition
+
+	// The current steering target - usually the next corner or end point of the current path. (RO)
+	AUTO_PROP Vector3 steeringTarget GetNextCorner
+
+	// The desired velocity of the agent including any potential contribution from avoidance. (RO)
+	AUTO_PROP Vector3 desiredVelocity GetDesiredVelocity
+
+	// Remaining distance along the current path - or infinity when not known. (RO)
+	AUTO_PROP float remainingDistance GetRemainingDistance
+
+	// The relative vertical displacement of the owning [[GameObject]].
+	AUTO_PROP float baseOffset GetBaseOffset SetBaseOffset
+
+	// Is agent currently positioned on an OffMeshLink. (RO)
+	CUSTOM_PROP bool isOnOffMeshLink
+	{
+		return self->IsOnOffMeshLink ();
+	}
+
+	// Enables or disables the current link.
+	CUSTOM void ActivateCurrentOffMeshLink (bool activated)
+	{
+		return self->ActivateCurrentOffMeshLink (activated);
+	}
+
+	// The current [[OffMeshLinkData]].
+	CSRAW public OffMeshLinkData currentOffMeshLinkData { get { return GetCurrentOffMeshLinkDataInternal (); } }
+
+	CUSTOM internal OffMeshLinkData GetCurrentOffMeshLinkDataInternal ()
+	{
+		OffMeshLinkData data;
+		self->GetCurrentOffMeshLinkData (&data);
+		return data;
+	}
+
+	// The next [[OffMeshLinkData]] on the current path.
+	CSRAW public OffMeshLinkData nextOffMeshLinkData { get { return GetNextOffMeshLinkDataInternal (); } }
+
+	CUSTOM internal OffMeshLinkData GetNextOffMeshLinkDataInternal ()
+	{
+		OffMeshLinkData data;
+		self->GetNextOffMeshLinkData (&data);
+		return data;
+	}
+
+	// Terminate OffMeshLink occupation and transfer the agent to the closest point on other side.
+	CUSTOM void CompleteOffMeshLink ()
+	{
+		return self->CompleteOffMeshLink ();
+	}
+
+	// Automate movement onto and off of OffMeshLinks.
+	AUTO_PROP bool autoTraverseOffMeshLink GetAutoTraverseOffMeshLink SetAutoTraverseOffMeshLink
+
+	// Automate braking of NavMeshAgent to avoid overshooting the destination.
+	AUTO_PROP bool autoBraking GetAutoBraking SetAutoBraking
+
+	// Attempt to acquire a new path if the existing path becomes invalid
+	AUTO_PROP bool autoRepath GetAutoRepath SetAutoRepath
+
+	// Does this agent currently have a path. (RO)
+	AUTO_PROP bool hasPath HasPath
+
+	// A path is being computed, but not yet ready. (RO)
+	AUTO_PROP bool pathPending PathPending
+
+	// Is the current path stale. (RO)
+	AUTO_PROP bool isPathStale IsPathStale
+
+	// Query the state of the current path.
+	AUTO_PROP NavMeshPathStatus pathStatus GetPathStatus
+
+	//*undocumented*
+	AUTO_PROP Vector3 pathEndPosition GetEndPositionOfCurrentPath
+
+	//*undocumented*
+	CUSTOM bool Warp (Vector3 newPosition)
+	{
+		return self->Warp(newPosition);
+	}
+
+	// Apply relative movement to current position.
+	CUSTOM void Move (Vector3 offset)
+	{
+		return self->Move (offset);
+	}
+
+	// Stop movement of this agent along its current path.
+	CUSTOM void Stop (bool stopUpdates = false)
+	{
+		return self->Stop (stopUpdates);
+	}
+
+	// Resumes the movement along the current path.
+	CUSTOM void Resume ()
+	{
+		return self->Resume ();
+	}
+
+	// Clears the current path. Note that this agent will not start looking for a new path until SetDestination is called.
+	CUSTOM void ResetPath ()
+	{
+		return self->ResetPath ();
+	}
+
+	// Assign path to this agent.
+	CUSTOM bool SetPath (NavMeshPath path)
+	{
+		Scripting::RaiseIfNull (path);
+		MonoNavMeshPath monopath;
+		MarshallManagedStructIntoNative (path, &monopath);
+		return self->SetPath (monopath.native);
+	}
+
+	// Set or get a copy of the current path.
+	CSRAW public NavMeshPath path { get { NavMeshPath path = new NavMeshPath (); CopyPathTo (path); return path; } set { if(value==null) throw new NullReferenceException(); SetPath (value); } }
+
+	CUSTOM internal void CopyPathTo (NavMeshPath path)
+	{
+		Scripting::RaiseIfNull (path);
+		MonoNavMeshPath monopath;
+		MarshallManagedStructIntoNative (path, &monopath);
+		self->CopyPath (monopath.native);
+	}
+
+	// Locate the closest NavMesh edge.
+	CUSTOM bool FindClosestEdge (out NavMeshHit hit)
+	{
+		return self->DistanceToEdge (hit);
+	}
+
+	// Trace movement towards a target postion in the NavMesh. Without moving the agent.
+	CUSTOM bool Raycast (Vector3 targetPosition, out NavMeshHit hit)
+	{
+		return self->Raycast (targetPosition, hit);
+	}
+
+	// Calculate a path to a specified point and store the resulting path.
+	CSRAW public bool CalculatePath (Vector3 targetPosition, NavMeshPath path)
+	{
+		path.ClearCorners ();
+		return CalculatePathInternal (targetPosition, path);
+	}
+
+	CUSTOM private bool CalculatePathInternal (Vector3 targetPosition, NavMeshPath path)
+	{
+		MonoNavMeshPath monopath;
+		MarshallManagedStructIntoNative (path, &monopath);
+		int actualSize = self->CalculatePolygonPath (targetPosition, monopath.native);
+		return actualSize>0;
+	}
+
+	// Sample a position along the current path.
+	CUSTOM bool SamplePathPosition (int passableMask, float maxDistance, out NavMeshHit hit)
+	{
+		return self->SamplePathPosition (passableMask, maxDistance, hit);
+	}
+
+	// Sets the cost for traversing over geometry of the layer type.
+	CUSTOM void SetLayerCost (int layer, float cost)
+	{
+		self->SetLayerCost (layer, cost);
+	}
+
+	// Gets the cost for traversing over geometry of the layer type.
+	CUSTOM float GetLayerCost (int layer)
+	{
+		return self->GetLayerCost (layer);
+	}
+
+	// Specifies which NavMesh layers are passable (bitfield). Changing /walkableMask/ will make the path stale (see ::ref::isPathStale)
+	AUTO_PROP int walkableMask GetWalkableMask SetWalkableMask
+
+	// Maximum movement speed.
+	AUTO_PROP float speed GetSpeed SetSpeed
+
+	// Maximum rotation speed in (deg/s).
+	AUTO_PROP float angularSpeed GetAngularSpeed SetAngularSpeed
+
+	// Maximum acceleration.
+	AUTO_PROP float acceleration GetAcceleration SetAcceleration
+
+	// Should the agent update the transform position.
+	AUTO_PROP bool updatePosition GetUpdatePosition SetUpdatePosition
+
+	// Should the agent update the transform orientation.
+	AUTO_PROP bool updateRotation GetUpdateRotation SetUpdateRotation
+
+	// Agent avoidance radius.
+	AUTO_PROP float radius GetRadius SetRadius
+
+	// Agent height.
+	AUTO_PROP float height GetHeight SetHeight
+
+	// The level of quality of avoidance.
+	AUTO_PROP ObstacleAvoidanceType obstacleAvoidanceType GetObstacleAvoidanceType SetObstacleAvoidanceType
+
+	// The avoidance priority level.
+	AUTO_PROP int avoidancePriority GetAvoidancePriority SetAvoidancePriority
+END
+
+CSRAW }
+

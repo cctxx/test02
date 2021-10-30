@@ -1,0 +1,93 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Editor/Src/VersionControl/VCTask.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace UnityEditor.VersionControl
+{
+
+ENUM CompletionAction
+	UpdatePendingWindow = 1,
+	OnChangeContentsPendingWindow = 2,
+	OnIncomingPendingWindow = 3,
+	OnChangeSetsPendingWindow = 4,
+	OnGotLatestPendingWindow = 5,
+	OnSubmittedChangeWindow = 6,
+	OnAddedChangeWindow = 7,
+END	
+
+ENUM SubmitResult
+	OK = 1,
+	Error = 2,
+	ConflictingFiles = 4,
+	UnaddedFiles = 8,
+END
+
+//*undocumented* 
+CLASS Task
+	CSRAW IntPtr m_thisDummy;
+
+	C++RAW
+ #define SELF ExtractMonoObjectData<VCTask*>(self)
+
+	CUSTOM public void Wait()
+	{
+		SELF->Wait();
+	}
+	
+	CUSTOM void SetCompletionAction (CompletionAction action) { SELF->SetCompletionAction(action); }
+
+	CUSTOM private Asset[] Internal_GetAssetList()
+	{
+		return SELF->GetMonoAssetList ();
+	}
+
+	CUSTOM private ChangeSet[] Internal_GetChangeSets()
+	{
+		return SELF->GetMonoChangeSets ();
+	}
+
+	CUSTOM private Message[] Internal_GetMessages()
+	{
+		return SELF->GetMonoMessages ();
+	}
+
+	//*undocumented
+	THREAD_SAFE
+	CUSTOM public void Dispose ()
+	{
+		if (SELF != NULL)
+			SELF->Release();
+		SELF = NULL;
+	}
+
+	CSRAW
+	~Task()
+	{
+		Dispose ();
+	}
+
+
+	CUSTOM_PROP int userIdentifier		{ return SELF->GetUserIdentifier(); } { return SELF->SetUserIdentifier(value); }
+	CUSTOM_PROP string text				{ return scripting_string_new(SELF->GetText()); }
+	CUSTOM_PROP string description		{ return scripting_string_new(SELF->GetDescription()); }
+	CUSTOM_PROP bool success			{ return SELF->GetSuccess(); }
+	CUSTOM_PROP int secondsSpent		{ return SELF->GetSecondsSpent(); }
+	CUSTOM_PROP int progressPct			{ return SELF->GetProgressPct(); }
+	CUSTOM_PROP string progressMessage	{ return scripting_string_new(SELF->GetProgressMessage()); }
+	CUSTOM_PROP int resultCode			{ return SELF->GetResultCode(); }
+	CUSTOM_PROP Message[] messages	{ return SELF->GetMonoMessages(); }
+
+	C++RAW
+ #undef SELF
+END
+
+CSRAW
+}

@@ -1,0 +1,1 @@
+void DestroyRenderersFromLODGroupInOpenScene (int maxLevel);

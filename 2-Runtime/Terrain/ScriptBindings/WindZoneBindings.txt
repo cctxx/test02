@@ -1,0 +1,183 @@
+C++RAW
+#include "UnityPrefix.h"
+#include "Runtime/Terrain/Heightmap.h"
+#include "Runtime/Filters/Mesh/LodMesh.h"
+#include "Runtime/Terrain/DetailDatabase.h"
+#include "Runtime/Terrain/SplatDatabase.h"
+#include "Runtime/Terrain/TerrainData.h"
+#include "Runtime/Terrain/TerrainInstance.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/BaseClasses/GameObject.h"
+#include "Runtime/Terrain/TerrainRenderer.h"
+#include "Runtime/Camera/Light.h"
+#include "Runtime/Terrain/DetailRenderer.h"
+#include "Runtime/Terrain/ImposterRenderTexture.h"
+#include "Runtime/Terrain/TreeRenderer.h"
+#include "Runtime/Terrain/Wind.h"
+#include "Runtime/Terrain/Tree.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+
+using namespace Unity;
+using namespace std;
+
+CSRAW
+
+#if ENABLE_TERRAIN
+
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace UnityEngine
+{
+
+/// Modes a Wind Zone can have, either Spherical or Directional
+/// You can have more than one Spherical Wind Zone in a scene, but it does not make much
+/// sense to have more than one Directional Wind Zone in your scene as it affects
+/// the whole scene. This Wind Zone Mode is used by the WindZone.mode member.
+CONDITIONAL ENABLE_TERRAIN
+ENUM internal WindZoneMode 
+	/// Wind zone only has an effect inside the radius, and has a falloff from the center towards the edge.
+	CONVERTEXAMPLE
+	BEGIN EX
+	// Creates a Directional Wind Zone that blows wind up.
+	
+	function Start() {
+	//	var wind : WindZone = gameObject.AddComponent(WindZone);
+	//	wind.mode = WindZoneMode.Directional;
+	//	transform.rotation = Quaternion.LookRotation(Vector3.up);
+	}
+	END EX
+	///
+	Directional = 0, 
+	/// Wind zone affects the entire scene in one direction.
+	CONVERTEXAMPLE
+	BEGIN EX
+	// Creates a Spherical Wind Zone.
+
+	function Start() {
+	//	var wind : WindZone = gameObject.AddComponent(WindZone);
+	//	wind.mode = WindZoneMode.Spherical;
+	}
+	END EX
+	///
+	Spherical = 1
+END
+
+/// Wind Zones add realism to the trees you create by making them wave their branches and leaves as if blown by the wind.
+///
+/// __Note:__ This only works with trees created by the tree creator.
+CSRAW
+CONDITIONAL ENABLE_TERRAIN
+CLASS internal WindZone : Component
+
+	/// Defines the type of wind zone to be used (Spherical or Directional).
+	CONVERTEXAMPLE
+	BEGIN EX
+	// Creates a Directional Wind Zone.
+	
+	function Start() {
+	//	var wind : WindZone = gameObject.AddComponent(WindZone);
+	//	wind.mode = WindZoneMode.Directional;
+	}
+	END EX
+	///
+	AUTO_PROP WindZoneMode mode GetMode SetMode
+
+	/// Radius of the Spherical Wind Zone (only active if the WindZoneMode is set to Spherical).
+	CONVERTEXAMPLE
+	BEGIN EX
+	// Creates a Spherical Wind Zone and sets its radius to 10.
+	
+	function Start() {
+	//	var wind : WindZone = gameObject.AddComponent(WindZone);
+	//	wind.mode = WindZoneMode.Spherical;
+	//	wind.radius = 10;
+	}
+	END EX
+	///
+	AUTO_PROP float radius GetRadius SetRadius
+
+	/// The primary wind force.
+	/// It produces a softly changing wind Pressure.
+	CONVERTEXAMPLE
+	BEGIN EX
+	// Creates a wind zone with the effect of a helicopter passing by
+	// Just place this into an empty game object and move it over a tree
+	
+	function Start() {
+	//	var wind : WindZone = gameObject.AddComponent(WindZone);
+	//	wind.mode = WindZoneMode.Spherical;
+	//	wind.radius = 10.0;
+	//	wind.windMain = 3.0;
+	//	wind.windTurbulence = 0.5;
+	//	wind.windPulseMagnitude = 2.0;
+	//	wind.windPulseFrequency = 0.01;
+	}
+	END EX
+	///
+	AUTO_PROP float windMain GetWindMain SetWindMain
+
+	/// The turbulence wind force.
+	/// Produces a rapidly changing wind pressure.
+	CONVERTEXAMPLE
+	BEGIN EX
+	// Creates a wind zone to produce a softly changing general wind
+	// Just place this into an empty game object
+	
+	function Start() {
+	//	var wind : WindZone = gameObject.AddComponent(WindZone);
+	//	wind.mode = WindZoneMode.Directional;
+	//	wind.windMain = 0.70;
+	//	wind.windTurbulence = 0.1;
+	//	wind.windPulseMagnitude = 2.0;
+	//	wind.windPulseFrequency = 0.25;
+	}
+	END EX
+	///
+	AUTO_PROP float windTurbulence GetWindTurbulence SetWindTurbulence
+
+	/// Defines ow much the wind changes over time.
+	CONVERTEXAMPLE
+	BEGIN EX
+	// Creates a wind zone with the effect of a helicopter passing by
+	// Just place this into an empty game object and move it over a tree
+	
+	function Start() {
+	//	var wind : WindZone = gameObject.AddComponent(WindZone);
+	//	wind.mode = WindZoneMode.Spherical;
+	//	wind.radius = 10.0;
+	//	wind.windMain = 3.0;
+	//	wind.windTurbulence = 0.5;
+	//	wind.windPulseMagnitude = 2.0;
+	//	wind.windPulseFrequency = 0.01;
+	}
+	END EX
+	///
+	AUTO_PROP float windPulseMagnitude GetWindPulseMagnitude SetWindPulseMagnitude
+
+	/// Defines the frequency of the wind changes.
+	CONVERTEXAMPLE
+	BEGIN EX
+	// Creates a wind zone to produce a softly changing general wind
+	// Just place this into an empty game object
+	
+	function Start() {
+	//	var wind : WindZone = gameObject.AddComponent(WindZone);
+	//	wind.mode = WindZoneMode.Directional;
+	//	wind.windMain = 0.70;
+	//	wind.windTurbulence = 0.1;
+	//	wind.windPulseMagnitude = 2.0;
+	//	wind.windPulseFrequency = 0.25;
+	}
+	END EX
+	///
+	AUTO_PROP float windPulseFrequency GetWindPulseFrequency SetWindPulseFrequency
+END
+
+CSRAW
+}
+#endif // ENABLE_TERRAIN

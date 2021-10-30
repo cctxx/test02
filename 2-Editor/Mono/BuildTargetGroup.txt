@@ -1,0 +1,58 @@
+CSRAW
+
+namespace UnityEditor
+{
+
+// Build target group.
+ENUM BuildTargetGroup
+		// Unknown target.
+		Unknown = 0,
+		
+		// Mac/PC standalone target.
+		Standalone = 1,
+		
+		// Mac/PC webplayer target.
+		WebPlayer = 2,
+		
+		// Nintendo Wii target.
+		Wii = 3,
+		
+		// Apple iOS target.
+		iPhone = 4,
+		
+		// Sony Playstation 3 target.
+		PS3 = 5,
+		
+		// Microsoft XBOX360 target.
+		XBOX360 = 6,
+		
+		// Android target.
+		Android = 7,
+		
+		// was Broadcom = 8,
+		
+		// GLESEmu target.
+		GLESEmu = 9,
+		
+		// was GLES20Emu = 10,
+		
+		NaCl = 11,
+		
+		// Flash player target.
+		FlashPlayer = 12,
+
+
+		//*undocumented*
+		Metro = 14,
+		
+#if INCLUDE_WP8SUPPORT
+		//*undocumented*
+		WP8 = 15,
+#endif
+		BB10 = 16,
+
+		Tizen = 17,
+
+END
+
+CSRAW }

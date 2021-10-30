@@ -1,0 +1,77 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Animation/AnimationClip.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Editor/Src/Animation/MuscleClipQualityInfo.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+
+namespace UnityEditor
+{
+
+CLASS internal MuscleClipQualityInfo
+	CSRAW public float loop = 0;
+	CSRAW public float loopOrientation = 0;
+	CSRAW public float loopPositionY = 0;
+	CSRAW public float loopPositionXZ = 0;
+END
+
+C++RAW
+
+STRUCT internal QualityCurvesTime
+	CSRAW public float fixedTime;
+	CSRAW public float variableEndStart;
+	CSRAW public float variableEndEnd;
+	CSRAW public int q;
+END
+
+	
+C++RAW
+
+struct QualityCurvesTime
+{		
+	float	fixedTime;
+	float	variableEndStart;
+	float	variableEndEnd;
+	int		q;
+};
+
+CLASS internal MuscleClipEditorUtilities
+		
+	CUSTOM static MuscleClipQualityInfo GetMuscleClipQualityInfo(AnimationClip clip, float startTime, float stopTime)
+	{
+		MonoObject *obj = mono_object_new (mono_domain_get(), MONO_COMMON.muscleClipQualityInfo);
+		ExtractMonoObjectData<MuscleClipQualityInfo> (obj) = GetMuscleClipQualityInfo(*clip, startTime, stopTime);
+		return obj;
+	}
+
+	CUSTOM static void CalculateQualityCurves (AnimationClip clip, QualityCurvesTime time, Vector2[] poseCurve, Vector2[] rotationCurve, Vector2[] heightCurve, Vector2[] positionCurve)
+	{
+		int poseCurveSize = GetScriptingArraySize (poseCurve);
+		Vector2f* poseCurveArr = Scripting::GetScriptingArrayStart<Vector2f> (poseCurve);
+
+		int rotationCurveSize = GetScriptingArraySize (rotationCurve);
+		Vector2f* rotationCurveArr = Scripting::GetScriptingArrayStart<Vector2f> (rotationCurve);
+
+		int heightCurveSize = GetScriptingArraySize (heightCurve);
+		Vector2f* heightCurveArr = Scripting::GetScriptingArrayStart<Vector2f> (heightCurve);
+		
+		int positionCurveSize = GetScriptingArraySize (positionCurve);
+		Vector2f* positionCurveArr = Scripting::GetScriptingArrayStart<Vector2f> (positionCurve);
+				
+		Assert(poseCurveSize == rotationCurveSize && rotationCurveSize == heightCurveSize && heightCurveSize == positionCurveSize);
+		CalculateQualityCurves(* clip, time.fixedTime, time.variableEndStart, time.variableEndEnd, time.q, poseCurveSize, poseCurveArr, rotationCurveArr, heightCurveArr, positionCurveArr);
+	}
+	
+	
+END
+	
+		
+
+
+
+CSRAW }

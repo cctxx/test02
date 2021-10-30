@@ -1,0 +1,92 @@
+C++RAW
+
+
+#include "UnityPrefix.h"
+#include "Editor/Src/ComponentUtility.h"
+#include "Runtime/BaseClasses/GameObject.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+
+
+using namespace Unity;
+using namespace std;
+
+CSRAW
+
+using UnityEngine;
+using UnityEditor;
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+
+
+//bool MoveComponentUp (const std::vector<Object*>& context, bool validateOnly);
+//bool MoveComponentDown (const std::vector<Object*>& context, bool validateOnly);
+//bool CopyComponent (const std::vector<Object*>& context, bool validateOnly);
+//bool PasteComponentAsNew (const std::vector<Object*>& context, bool validateOnly);
+//bool PasteComponentValues (const std::vector<Object*>& context, bool validateOnly);
+
+//TODO: Multiple Selection?
+//TODO: List of components, List of objects?
+
+
+//Maybe we should also add those:
+// - GetComponentIndex - maybe this would make more sense in the Component class?
+// - SetComponentIndex - maybe this would make more sense in the Component class?
+// - 
+
+
+
+namespace UnityEditorInternal
+{
+	CLASS ComponentUtility
+		
+		CUSTOM public static bool MoveComponentUp(Component component)
+		{
+			std::vector<Object*> context;
+			context.push_back(component);
+
+			return MoveComponentUp (context, false);
+		}
+
+		CUSTOM public static bool MoveComponentDown(Component component)
+		{
+			std::vector<Object*> context;
+			context.push_back(component);
+
+			return MoveComponentDown (context, false);
+		}
+
+		CUSTOM public static bool CopyComponent(Component component)
+		{
+			std::vector<Object*> context;
+			context.push_back(component);
+
+			return CopyComponent (context, false);
+		}
+
+		CUSTOM public static bool PasteComponentValues(Component component)
+		{
+			std::vector<Object*> context;
+			context.push_back(component);
+
+			return PasteComponentValues (context, false);
+		}
+
+		//Append new Components to the GameObject
+		CUSTOM public static bool PasteComponentAsNew(GameObject go)
+		{
+			int componentCount = go->GetComponentCount ();
+			Unity::Component *com = go->GetComponentPtrAtIndex (componentCount-1);
+
+			std::vector<Object*> context;
+			context.push_back(com);
+
+			return PasteComponentAsNew (context, false);
+		}
+
+	END
+CSRAW
+};
+

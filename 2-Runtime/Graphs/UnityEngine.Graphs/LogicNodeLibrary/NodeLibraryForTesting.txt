@@ -1,0 +1,124 @@
+		[Logic]
+		public static void ExplosionForce (float force, Vector3 position, float radius, float upwardsModifier, float occlusion)
+		{
+			// Get all colliders in radius
+			Collider[] colliders = Physics.OverlapSphere(position, radius);
+			
+			// Get all of those that have rigidbodies
+			List<Rigidbody> rigids = new List<Rigidbody> ();
+			foreach (Collider col in colliders)
+			{
+				Rigidbody rigid = col.rigidbody;
+				if (rigid != null)
+					rigids.Add(rigid);
+			}
+			
+			if (occlusion <= 0)
+			{
+				// Apply the explosion force
+				for (int i=0; i<rigids.Count; i++)
+				{
+					rigids[i].AddExplosionForce(force, position, radius, upwardsModifier, ForceMode.Impulse);
+				}
+			}
+			else
+			{
+				// Save original layers of all the rigidbodies
+				// Then but them into Ignore Raycast layer
+				int[] origLayers = new int[rigids.Count];
+				for (int i=0; i<rigids.Count; i++)
+				{
+					origLayers[i] = rigids[i].gameObject.layer;
+					rigids[i].gameObject.layer = 2; // Ignore Raycast
+				}
+				
+				// Find out which of the rigidbodies are occuded
+				bool[] occluded = new bool[rigids.Count];
+				for (int i=0; i<rigids.Count; i++)
+				{
+					Vector3 pos = rigids[i].transform.position;
+					if (Physics.Raycast(pos, position - pos, (position - pos).magnitude))
+						occluded[i] = true;
+				}
+				
+				// Set layers back to the original values
+				for (int i=0; i<rigids.Count; i++)
+				{
+					rigids[i].gameObject.layer = origLayers[i];
+				}
+				
+				// Finally apply the explosion force
+				float mult = Mathf.Clamp01(1-occlusion);
+				for (int i=0; i<rigids.Count; i++)
+				{
+					float thisForce = force;
+					if (occluded[i])
+						thisForce *= mult;
+					rigids[i].AddExplosionForce(thisForce, position, radius, upwardsModifier, ForceMode.Impulse);
+				}
+			}
+		}
+				[Logic]
+		public static void FindCollidersInRadius (Vector3 center, float radius, ColliderDelegate affected, ColliderDelegate done)
+		{
+			Collider[] colliders = Physics.OverlapSphere(center, radius);
+			foreach (Collider col in colliders)
+			{
+				affected(col);
+			}
+			if (done == null)
+				Debug.LogWarning("done delegate is null");
+			else
+				done(colliders[0]);
+		}
+
+		[Logic]
+		public static float AssignFloat (float value)
+		{
+			return value;
+		}
+
+		// Eval
+		[LogicEval]
+		public static Vector3 Vector3FromFloats (float x, float y, float z)
+		{
+			return new Vector3(x, y, z);
+		}
+		
+		public enum Vector3Element {X, Y, Z}
+		[LogicEval]
+		public static float ElementFromVector3 (Vector3 vector, Vector3Element element)
+		{
+			switch (element)
+			{
+				case Vector3Element.X:
+					return vector.x;
+				case Vector3Element.Y:
+					return vector.y;
+				case Vector3Element.Z:
+					return vector.z;
+				default:
+					return 0f;
+			}
+		}
+		
+		[LogicEval]
+		public static Vector3 ScaleVector (Vector3 vector, float scalar)
+		{
+			return vector * scalar;
+		}
+
+		[LogicEval]
+		public static Vector3 AddVectors (Vector3 vector1, Vector3 vector2)
+		{
+			return vector1 + vector2;
+		}
+
+		[LogicEval]
+		public static Vector3 InverseDistVector (Vector3 from, Vector3 to, float multiplier)
+		{
+			float dist = Vector3.Distance(from, to);
+			if (dist == 0)
+				return Vector3.zero;
+			return (to - from) / (dist * dist) * multiplier;
+		}

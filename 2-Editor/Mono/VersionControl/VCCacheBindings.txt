@@ -1,0 +1,118 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Runtime/Scripting/ScriptingManager.h"
+#include "Runtime/Scripting/Backend/ScriptingTypeRegistry.h"
+#include "Runtime/Scripting/Backend/ScriptingBackendApi.h"
+#if ENABLE_VERSION_CONTROL_INTEGRATION
+#include "Editor/Src/VersionControl/VCAsset.h"
+#include "Editor/Src/VersionControl/VCChangelist.h"
+#include "Editor/Src/VersionControl/VCCache.h"
+#include "Editor/Src/VersionControl/VCProvider.h"
+#include "Editor/Src/VersionControl/VCTask.h"
+#include "Runtime/Allocator/MemoryMacros.h"
+#endif
+
+CSRAW
+using System;
+using UnityEngine;
+using UnityEditor;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace UnityEditor.VersionControl
+{
+
+// Keep internal and undocumented until we expose more functionality
+//*undocumented
+CONDITIONAL ENABLE_VERSION_CONTROL_INTEGRATION
+CLASS VCCache
+
+	C++RAW
+
+	#if ENABLE_VERSION_CONTROL_INTEGRATION
+	static void MonoVCAssetArrayToCpp(ScriptingArray* assets, VCAssetList& list)
+	{
+		int size = GetScriptingArraySize(assets);
+		for (int i=0;i<size;i++)
+		{
+			ScriptingObject* o = Scripting::GetScriptingArrayElement<ScriptingObject*>(assets,i);
+			VCAsset* asset = ExtractMonoObjectData<VCAsset*>(o);
+			list.push_back(*asset);
+		}
+	}
+	#endif
+
+	CUSTOM private static VCAsset[] Internal_GetSelected()
+	{
+		VCAssetList assetList;
+		GetVCCache().GetSelection(assetList);
+
+		MonoClass* elementType = GetMonoManager ().GetMonoClass ("VCAsset", "UnityEditor.VersionControl");
+		MonoArray* array = mono_array_new(mono_domain_get(), elementType, assetList.size());
+		for (int i = 0; i < assetList.size(); ++i)
+		{
+
+			ScriptingObject* monoAsset = scripting_object_new(GetScriptingTypeRegistry().GetType("UnityEditor.VersionControl", "VCAsset"));
+			ExtractMonoObjectData<VCAsset*>(monoAsset) = UNITY_NEW(VCAsset, kMemVersionControl) (assetList[i]);
+			Scripting::SetScriptingArrayElement(array, i, monoAsset);
+		}
+		return array;
+	}
+
+    CUSTOM public static VCAsset GetAssetByPath(string unityPath)
+	{
+		VCAsset asset;
+		bool ok = GetVCCache().GetAssetByPath(unityPath, asset);
+		if (!ok)
+			return NULL;
+					
+		ScriptingObject* monoAsset = scripting_object_new(GetScriptingTypeRegistry().GetType("UnityEditor.VersionControl", "VCAsset"));
+		VCAsset* asss = UNITY_NEW(VCAsset, kMemVersionControl) (asset);
+		ExtractMonoObjectData<VCAsset*>(monoAsset) = asss;
+		return monoAsset;
+	}
+
+	CUSTOM public static VCAsset GetAssetByGUID(string GUID)
+	{
+		VCAsset asset;
+		bool ok = GetVCCache().GetAssetByGUID(StringToGUID(GUID), asset);
+		if (!ok)
+			return NULL;
+
+		ScriptingObject* monoAsset = scripting_object_new(GetScriptingTypeRegistry().GetType("UnityEditor.VersionControl", "VCAsset"));
+		VCAsset* asss = UNITY_NEW(VCAsset, kMemVersionControl) (asset);
+		ExtractMonoObjectData<VCAsset*>(monoAsset) = asss;
+		return monoAsset;
+	} 
+
+	CUSTOM public static void Invalidate()
+	{
+		GetVCCache().Invalidate();
+	}
+
+	CUSTOM public static void Internal_Invalidate(VCAsset[] assets)
+	{
+		VCAssetList list;
+		MonoVCAssetArrayToCpp(assets, list);
+		GetVCCache().Invalidate(list);
+	}
+
+	CUSTOM public static void Internal_InvalidateAsString(string assetProjectPath)
+	{
+		VCAsset a;
+		a.SetProjectPath(assetProjectPath);
+		VCAssetList list;
+		list.push_back(a);
+		GetVCCache().Invalidate(list);
+	}
+
+END
+
+
+CSRAW }

@@ -1,0 +1,1463 @@
+C++RAW
+
+#include "UnityPrefix.h"
+
+#include "Editor/Mono/MonoEditorUtility.h"
+#include "Editor/Platform/Interface/RepaintController.h"
+#include "Editor/Platform/Interface/EditorWindows.h"
+#include "Editor/Src/AssetPipeline/MonoAssemblyImporter.h"
+#include "Editor/Src/Utility/ObjectImages.h"
+#include "Editor/Src/Gizmos/GizmoUtil.h"
+#include "Editor/Src/EditorHelper.h"
+#include "Editor/Src/OptimizedGUIBlock.h"
+#include "Editor/Src/Gizmos/GizmoManager.h"
+#include "Editor/Src/EditorResources.h"
+#include "Editor/Src/AnnotationManager.h"
+#include "Editor/Src/InspectorExpandedState.h"
+
+#include "Runtime/BaseClasses/Tags.h"
+#include "Runtime/Camera/Camera.h"
+#include "Runtime/Filters/Misc/Font.h"
+#include "Runtime/Input/InputManager.h"
+#include "Runtime/IMGUI/GUIState.h"
+#include "Runtime/IMGUI/TextMeshGenerator2.h"
+#include "Runtime/IMGUI/GUIStyle.h"
+#include "Runtime/IMGUI/GUIManager.h"
+#include "Runtime/Graphics/GeneratedTextures.h"
+#include "Runtime/Graphics/RenderTexture.h"
+#include "Runtime/Math/Rect.h"
+#include "Runtime/Misc/AssetBundle.h"
+#include "Runtime/Misc/ResourceManager.h"
+#include "Runtime/Misc/ResourceManagerUtility.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Scripting/Scripting.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Scripting/ScriptingObjectWithIntPtrField.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Runtime/Utilities/CopyPaste.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using UnityEngineInternal;
+using UnityEditorInternal;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.IO;
+
+namespace UnityEditor
+{
+
+CSRAW [StructLayout (LayoutKind.Sequential)]
+CLASS internal BuiltinResource
+	CSRAW
+	public string m_Name;
+	public int m_InstanceID;
+END
+
+C++RAW
+struct MonoBuiltinResource
+{
+	MonoString* m_Name;
+	int m_InstanceID;
+};
+static void BuiltinResourceToMono (const std::pair<std::string,int>& src, MonoBuiltinResource& dst)
+{
+	dst.m_Name = scripting_string_new(src.first);
+	dst.m_InstanceID = src.second;
+}
+
+
+// Misc helper stuff for [[EditorGUI]].
+CLASS EditorGUIUtility : GUIUtility
+	
+	// Are GUIStyle fonts bold right now?
+	CSRAW static internal int s_FontIsBold = -1;
+	
+	CSRAW private static Texture2D s_InfoIcon;
+	CSRAW private static Texture2D s_WarningIcon;
+	CSRAW private static Texture2D s_ErrorIcon;
+	
+	// *undocumented*
+	CSRAW static EditorGUIUtility() 
+	{
+		GUISkin.m_SkinChanged += SkinChanged;
+	}
+	C++RAW
+ bool s_wantsMouseJumping = false;
+	
+	CSRAW public static float singleLineHeight { get { return EditorGUI.kSingleLineHeight; } }
+	
+	CSRAW internal static GUIContent TextContent (string name) {
+		if (name == null)
+			name = "";
+			
+		GUIContent gc = (GUIContent)s_TextGUIContents[name];
+		if (gc == null) {
+			if (s_ScriptInfos == null)
+				LoadScriptInfos ();
+			gc = (GUIContent)s_ScriptInfos[name];
+			if (gc == null) 
+				gc = new GUIContent (name);
+			gc.image = LoadIconForSkin (name, skinIndex);
+			s_TextGUIContents[name] = gc;
+		}
+		return gc;
+	}
+	
+	
+	// Returns an array of GUIContents using TextContent for an enum.
+	CSRAW internal static GUIContent[] GetTextContentsForEnum (Type type)
+	{
+		System.Array values = System.Enum.GetValues(type);
+		string[] names = System.Enum.GetNames(type);
+		
+		// Get highest value
+		int max = 0;
+		foreach (int value in values)
+		{
+			if (value < 0)
+			{
+				Debug.LogError("Enum may not be smaller than zero");
+				return null;
+			}
+			if (value > 512)
+			{
+				Debug.LogError("Largest value in enum may not be larger than 512");
+				return null;
+			}
+			max = value > max ? value : max;
+		}
+		
+		GUIContent[] result = new GUIContent[max + 1];
+
+		for (int i=0;i<names.Length;i++)
+		{
+			int value = (int)values.GetValue(i);
+			
+			string identifier = type.Name + "." + names[i];
+			result[value] = EditorGUIUtility.TextContent(identifier);
+			if (identifier == result[value].text)
+			{
+				Debug.LogError("enum name is not found in localization file: " + identifier);
+			}
+		}
+			
+		return result;
+	}
+
+
+	CSRAW internal static GUIContent IconContent (string name) {
+		GUIContent gc = (GUIContent)s_IconGUIContents[name];
+		if (gc == null) {
+			if (s_ScriptInfos == null)
+				LoadScriptInfos ();
+			GUIContent found = (GUIContent)s_ScriptInfos[name];
+			gc = new GUIContent ();
+			if (found != null) 
+				gc.tooltip = found.tooltip;
+			gc.image = LoadIconRequired (name);
+			s_IconGUIContents[name] = gc;
+		}
+		return gc;
+	}
+	CSRAW internal static Color kDarkViewBackground = new Color (0.22f, 0.22f, 0.22f, 0);
+	
+	CSRAW internal static Texture2D LoadIconRequired (string name)
+	{
+		Texture2D tex = LoadIcon (name);
+			
+		if (!tex)
+			Debug.LogError ("Unable to load '" + EditorResourcesUtility.iconsPath + name + "' nor '" + EditorResourcesUtility.generatedIconsPath + name + "'");
+			
+		return tex;
+	}
+	
+	CSRAW internal static Texture2D LoadIcon (string name)
+	{
+		return LoadIconForSkin (name, skinIndex);
+	}
+	
+	CSRAW static Texture2D LoadGeneratedIconOrNormalIcon (string name)
+	{
+		Texture2D tex = Load (EditorResourcesUtility.generatedIconsPath + name + ".asset") as Texture2D;
+		if (!tex)
+			tex = Load (EditorResourcesUtility.iconsPath + name + ".png") as Texture2D;
+
+		return tex;
+	}
+
+	CSRAW internal static Texture2D LoadIconForSkin (string name, int skinIndex)
+	{
+		if (skinIndex == 0)
+		{
+			return LoadGeneratedIconOrNormalIcon(name);
+		}
+		
+		Texture2D tex = LoadGeneratedIconOrNormalIcon("d_" + name);
+		if (!tex)
+			tex = LoadGeneratedIconOrNormalIcon(name);
+		return tex;
+	}
+
+	CSRAW internal static GUIContent IconContent (string name, string tooltip) {
+		GUIContent gc = IconContent( name );
+		gc.tooltip = tooltip;
+		return gc;
+	}
+	
+	// Is the user currently using the pro skin? (RO)
+	CSRAW public static bool isProSkin { get { return skinIndex == 1; } }
+	
+	CUSTOM_PROP internal static int skinIndex
+	{
+		return GetEditorResources().GetSkinIdx ();
+	}
+	{
+		GetEditorResources().SetSkinIdx (value);
+	}
+
+	CSRAW internal static void Internal_SwitchSkin ()
+	{
+		skinIndex = 1 - skinIndex;
+	}
+
+	CSRAW static GUIContent s_ObjectContent = new GUIContent ();
+
+	// Return a GUIContent object with the name and icon of an Object.
+	CSRAW public static GUIContent ObjectContent (Object obj, System.Type type) {
+		if (obj) {
+			s_ObjectContent.text = obj.name;
+			s_ObjectContent.image = AssetPreview.GetMiniThumbnail (obj);
+		} else {
+			string className;
+			if (type == null)
+				className = "<no type>";
+			else if (type.Namespace != null) 
+				className = type.ToString().Substring(type.Namespace.ToString().Length + 1);
+			else 
+				className = type.ToString();
+			s_ObjectContent.text = System.String.Format ("None ({0})", className);
+			s_ObjectContent.image = AssetPreview.GetMiniTypeThumbnail (type);
+		}
+		return s_ObjectContent;
+	}
+	
+	CSRAW 
+	static GUIContent s_Text = new GUIContent(), s_Image = new GUIContent(), s_TextImage = new GUIContent();
+	internal static GUIContent TempContent (string t) {
+		s_Text.text = t;
+		return s_Text;
+	}
+	internal static GUIContent TempContent (Texture i) {
+		s_Image.image = i;
+		return s_Image;
+	}
+	
+	internal static GUIContent TempContent (string t, Texture i) {
+		s_TextImage.image = i;
+		s_TextImage.text = t;
+		return s_TextImage;
+	}
+	
+	internal static GUIContent[] TempContent (string[] texts) {
+		GUIContent[] retval = new GUIContent[texts.Length];
+		for (int i = 0; i < texts.Length; i++)
+			retval[i] = new GUIContent (texts[i]);
+		return retval;
+	}
+	
+	internal static bool HasHolddownKeyModifiers (Event evt)
+	{
+		return evt.shift | evt.control | evt.alt | evt.command;
+	}
+
+	// GUIStyle.cpp
+	C++RAW
+ extern float s_GUIStyleIconSizeX;
+	C++RAW
+ extern float s_GUIStyleIconSizeY;
+
+	// Does a given class have per-object thumbnails?
+	CSRAW public static bool HasObjectThumbnail (Type objType) {
+		return objType != null && (objType.IsSubclassOf  (typeof (Texture)) || objType == typeof(Texture));
+	}
+
+	// Set icons rendered as part of [[GUIContent]] to be rendered at a specific size.
+	CUSTOM public static void SetIconSize(Vector2 size)
+	{
+		s_GUIStyleIconSizeX = size.x;
+		s_GUIStyleIconSizeY = size.y;
+	}
+
+	// Get the size that has been set using ::ref::SetIconSize.
+	CSRAW public static Vector2 GetIconSize()
+	{
+		//FIXME: this is how it really should be, but right now it seems to fail badly (unrelated null ref exceptions and then crash)	
+		//Vector2 GetIconSize() { return Vector2f(s_GUIStyleIconSizeX, s_GUIStyleIconSizeY);}
+		Vector2 size;
+		Internal_GetIconSize(out size);
+		return size;
+	}
+	
+	CUSTOM private static void Internal_GetIconSize(out Vector2 size)
+	{ 
+		Vector2f v = Vector2f(s_GUIStyleIconSizeX, s_GUIStyleIconSizeY);
+		*size = v;
+	}
+
+	CUSTOM internal static Object GetScript (string scriptClass)
+	{
+		if (MonoScript* script = GetMonoScriptManager().FindRuntimeScript(scriptClass) )
+			return Scripting::ScriptingWrapperFor((Object*)script);
+		return NULL;
+	}
+	
+	CUSTOM internal static void SetIconForObject (Object obj, Texture2D icon)
+	{
+		GetAnnotationManager ().SetIconForObject(obj, icon);
+	}
+
+	// Remember to call CopyMonoScriptIconToImporters when data should be copied to monoimporter and monoassemblyimporter
+	CUSTOM internal static Texture2D GetIconForObject (Object obj)
+	{
+		return Scripting::ScriptingWrapperFor(GetAnnotationManager ().GetIconForObject(obj));
+	}	
+	
+	// Get a white texture.
+	CUSTOM_PROP public static Texture2D whiteTexture { return Scripting::ScriptingWrapperFor(builtintex::GetWhiteTexture()); }
+	
+	CSRAW internal static Texture2D infoIcon
+	{ get {
+		if (s_InfoIcon == null)
+			s_InfoIcon = EditorGUIUtility.LoadIcon ("console.infoicon");
+		return s_InfoIcon;
+	} }
+	
+	
+	CSRAW internal static Texture2D warningIcon
+	{ get {
+		if (s_WarningIcon == null)
+			s_WarningIcon = EditorGUIUtility.LoadIcon ("console.warnicon");
+		return s_WarningIcon;
+	} }
+	
+	CSRAW internal static Texture2D errorIcon
+	{ get {
+		if (s_ErrorIcon == null)
+			s_ErrorIcon = EditorGUIUtility.LoadIcon ("console.erroricon");
+		return s_ErrorIcon;
+	} }
+	
+	CSRAW internal static Texture2D GetHelpIcon (MessageType type)
+	{
+		switch (type)
+		{
+			case MessageType.Info:
+				return EditorGUIUtility.infoIcon;
+			case MessageType.Warning:
+				return EditorGUIUtility.warningIcon;
+			case MessageType.Error:
+				return EditorGUIUtility.errorIcon;
+		}
+		return null;
+	}
+	
+	// An invisible GUIContent that is not the same as GUIContent.none
+	CSRAW static GUIContent s_BlankContent = new GUIContent (" ");
+	CSRAW internal static GUIContent blankContent { get { return s_BlankContent; } }
+	
+	CSRAW static GUIStyle s_WhiteTextureStyle;
+	CSRAW internal static GUIStyle whiteTextureStyle { 
+		get { 
+			if (s_WhiteTextureStyle == null)
+			{
+				s_WhiteTextureStyle = new GUIStyle();
+				s_WhiteTextureStyle.normal.background = whiteTexture;
+			}
+			return s_WhiteTextureStyle;
+		}
+	}
+
+	CSRAW static GUIStyle s_BasicTextureStyle;
+	CSRAW internal static GUIStyle GetBasicTextureStyle (Texture2D tex) { 
+		if (s_BasicTextureStyle == null)
+			s_BasicTextureStyle = new GUIStyle();
+		
+		s_BasicTextureStyle.normal.background = tex;
+
+		return s_BasicTextureStyle;
+	}
+		
+	CSRAW
+	static Hashtable s_TextGUIContents = new Hashtable ();
+	static Hashtable s_IconGUIContents = new Hashtable ();
+	static void LoadScriptInfos () {
+		// Load tooltip strings and actual text items...
+		string tipStrings = System.IO.File.ReadAllText (EditorApplication.applicationContentsPath + "/Resources/UI_Strings_EN.txt");
+		
+		s_ScriptInfos = new Hashtable ();
+		char[] sep = new char[2] {':', '|' };
+		foreach (string tip in tipStrings.Split ('\n')) {
+			if (tip.StartsWith ("//")) 
+				continue;
+				
+			string[] s = tip.Split(sep);
+			switch (s.Length) {
+			case 0:					// Got an empty line... A comment or sth???
+			case 1:
+				continue;
+			case 2:
+				s_ScriptInfos[s[0]] = new GUIContent (s[1].Trim().Replace ("\\n", "\n"));
+				break;
+			case 3:
+				s_ScriptInfos[s[0]] = new GUIContent (s[1].Trim().Replace ("\\n", "\n"), s[2].Trim().Replace ("\\n", "\n"));
+				break;
+			default:
+				Debug.LogError ("Error in Tooltips: Too many strings in line beginning with '" + s[0] + "'");
+				break;
+			}
+		}
+	}
+
+
+	static Hashtable s_ScriptInfos = null;
+		
+	// Get a texture from its source filename.
+	CUSTOM static Texture2D FindTexture (string name) {
+		return Scripting::ScriptingWrapperFor (Texture2DNamed (name)); 
+	}
+	
+	// Get one of the built-in GUI skins, which can be the game view, inspector or scene view skin as chosen by the parameter.
+	CSRAW public static GUISkin GetBuiltinSkin (EditorSkin skin) {
+		return GUIUtility.GetBuiltinSkin ((int)skin);
+	}
+	
+	// Load a built-in resource that has to be there.
+	CSRAW public static Object LoadRequired (string path)
+	{
+		Object o = Load(path, typeof(Object));
+		if (!o) 
+			Debug.LogError ("Unable to find required resource at 'Editor Default Resources/" + path + "'");
+		return o;
+	}	
+
+	// Load a built-in resource
+	CSRAW public static Object Load (string path)
+	{
+		return Load(path, typeof(Object));
+	}
+	
+	CSRAW [TypeInferenceRule(TypeInferenceRules.TypeReferencedBySecondArgument)]
+	private static Object Load (string filename, Type type)
+	{
+		Object asset = AssetDatabase.LoadAssetAtPath("Assets/Editor Default Resources/" + filename, type);
+		if (asset != null)	
+			return asset;
+
+		return GetEditorAssetBundle ().Load(filename, type);
+	}
+
+	CUSTOM internal static Object GetBuiltinExtraResource (Type type, string path)
+	{
+		Scripting::RaiseIfNull(type);
+		return GetMonoBuiltinExtraResource(type, path.str);
+	}
+
+	CUSTOM internal static BuiltinResource[] GetBuiltinResourceList (int classID)
+	{
+		std::vector< std::pair<std::string,int> > reslist;
+		BuiltinResourceManager::GetBuiltinResourcesOfClass (classID, reslist);
+		return VectorToMonoClassArray<std::pair<std::string,int>, MonoBuiltinResource> (reslist, GetMonoManager().GetBuiltinEditorMonoClass("BuiltinResource"), BuiltinResourceToMono);
+	}
+
+	
+	/// *listonly*
+	CSRAW public static void PingObject (Object obj)
+	{
+		if (obj != null)
+			PingObject(obj.GetInstanceID());
+	}
+	// Ping an object in a window like clicking it in an inspector
+	CSRAW public static void PingObject (int targetInstanceID)
+	{
+		Object[] windows = Resources.FindObjectsOfTypeAll(typeof(BaseProjectWindow));
+		foreach (BaseProjectWindow p in windows)
+		{
+			p.PingTargetObject(targetInstanceID);
+		}
+		
+		foreach (ProjectBrowser pb in ProjectBrowser.GetAllProjectBrowsers ())
+		{
+			bool ping = true;
+			pb.FrameObject (targetInstanceID, ping);
+		}		
+		
+	}
+
+	CSRAW internal static void MoveFocusAndScroll(bool forward)
+	{
+		int prev = GUIUtility.keyboardControl;
+		Internal_MoveKeyboardFocus (forward);
+		if(prev != GUIUtility.keyboardControl)
+			RefreshScrollPosition();
+	}
+	
+	CSRAW internal static void RefreshScrollPosition()
+	{
+		Rect r;
+		GUI.ScrollViewState activeScrollView = GUI.GetTopScrollView();
+		
+		if (activeScrollView != null && Internal_GetKeyboardRect(GUIUtility.keyboardControl, out r))
+		{
+			activeScrollView.ScrollTo(r);
+		}
+	}
+
+	CSRAW internal static void ScrollForTabbing(bool forward)
+	{
+		Rect r;
+		
+		GUI.ScrollViewState activeScrollView = GUI.GetTopScrollView();
+		
+		if (activeScrollView != null && Internal_GetKeyboardRect(Internal_GetNextKeyboardControlID(forward), out r))
+		{
+			activeScrollView.ScrollTo(r);
+		}
+	}
+	
+	CUSTOM static private bool Internal_GetKeyboardRect (int id, out Rect rect)
+	{
+		GUIState &cState = GetGUIState();
+		return cState.m_ObjectGUIState->m_IDList.GetRectOfControl (id, *rect);
+	}
+	
+	CUSTOM static private void Internal_MoveKeyboardFocus (bool forward)
+	{
+		GUIState &cState = GetGUIState();
+		std::vector<IDList*> keyIDLists;
+		keyIDLists.push_back (&cState.m_ObjectGUIState->m_IDList);
+		cState.CycleKeyboardFocus(keyIDLists, forward);
+	}
+
+	CUSTOM static private int Internal_GetNextKeyboardControlID (bool forward)
+	{
+		GUIState &cState = GetGUIState();
+		std::vector<IDList*> keyIDLists;
+		keyIDLists.push_back (&cState.m_ObjectGUIState->m_IDList);
+		return cState.GetNextKeyboardControlID(keyIDLists, forward);
+	}
+
+	CUSTOM internal static AssetBundle GetEditorAssetBundle ()
+	{
+		return Scripting::ScriptingWrapperFor(GetEditorAssetBundle ());
+	}
+
+	CUSTOM static internal void SetRenderTextureNoViewport (RenderTexture rt)
+	{
+		RenderTexture::SetActive (rt, 0, kCubeFaceUnknown, RenderTexture::kFlagDontSetViewport);
+	}
+	
+	CUSTOM static internal void SetVisibleLayers (int layers)
+	{
+		GizmoManager::Get().SetVisibleLayers (layers);
+	}
+
+	CUSTOM static internal void SetLockedLayers (int layers)
+	{
+		g_LockedPickingLayers = layers;
+	}
+
+	CUSTOM static internal bool IsGizmosAllowedForObject (Object obj)
+	{
+		return GizmoManager::Get().IsGizmosAllowedForObject (obj);
+	}
+	
+	CSRAW internal static void ResetGUIState ()
+	{
+		GUI.skin = null;
+		GUI.backgroundColor = GUI.contentColor = Color.white;
+		GUI.color = EditorApplication.isPlayingOrWillChangePlaymode ? HostView.kPlayModeDarken : Color.white;
+		GUI.enabled = true;
+		GUI.changed = false;
+		EditorGUI.indentLevel = 0;
+		EditorGUI.ClearStacks ();
+		EditorGUIUtility.fieldWidth = 0;
+		EditorGUIUtility.labelWidth = 0;
+		
+		EditorGUIUtility.SetBoldDefaultFont (false);
+		EditorGUIUtility.UnlockContextWidth ();
+		EditorGUIUtility.hierarchyMode = false;
+		EditorGUIUtility.wideMode = false;
+
+		PropertyDrawer.s_DrawerStack.Clear ();
+	}
+	
+	// Render all ingame cameras.
+	CUSTOM static void RenderGameViewCameras (Rect cameraRect, bool gizmos, bool gui)
+	{
+		RenderGameViewCameras(cameraRect, gizmos, gui);
+	}
+
+	OBSOLETE warning Use version without the statsRect (it is not used anymore)
+	CSRAW public static void RenderGameViewCameras (Rect cameraRect, Rect statsRect, bool gizmos, bool gui)
+	{
+		RenderGameViewCameras (cameraRect, gizmos, gui);
+	}
+
+	// Send an input event into the game.
+	CUSTOM static void QueueGameViewInputEvent (Event evt)
+	{
+		GetGUIManager().QueueEvent(*evt);
+	}
+	
+	// Duplicate of SetDefaultFont in UnityEngine. We need to call it from editor code as well,
+	// while keeping both internal.
+	CUSTOM static internal void SetDefaultFont (Font font) 
+		{ GUIStyle::SetDefaultFont (font); }
+	
+
+	CSRAW
+	static GUIStyle GetStyle (string styleName) {
+		GUIStyle s = GUI.skin.FindStyle (styleName);
+		if (s == null)
+			s = EditorGUIUtility.GetBuiltinSkin (EditorSkin.Inspector).FindStyle (styleName);
+		if (s == null)
+		{
+			Debug.Log ("Missing built-in guistyle " + styleName);
+			s = GUISkin.error;
+		}
+		return s;
+	}
+	
+	internal static int s_LastControlID = 0;
+	// Called from C++ GetControlID method when run from the Editor.
+	// Editor GUI needs some additional things to happen when calling GetControlID.
+	// While this will also be called for runtime code running in Play mode in the Editor,
+	// it won't have any effect. EditorGUIUtility.s_LastControlID will be set to the id,
+	// but this is only used inside the handling of a single control
+	// (see DoPropertyFieldKeyboardHandling).
+	// EditorGUI.s_PrefixLabel.text will only be not null when EditorGUI.PrefixLabel
+	// has been called without a specified controlID. The control following the PrefixLabel clears this.
+	internal static void HandleControlID (int id)
+	{
+		s_LastControlID = id;
+		if (EditorGUI.s_PrefixLabel.text != null)
+			EditorGUI.HandlePrefixLabel (EditorGUI.s_PrefixTotalRect, EditorGUI.s_PrefixRect, EditorGUI.s_PrefixLabel, s_LastControlID, EditorGUI.s_PrefixStyle);
+	}
+	
+	CSRAW public static bool editingTextField
+	{
+		get { return EditorGUI.RecycledTextEditor.s_ActuallyEditing; }
+		set { EditorGUI.RecycledTextEditor.s_ActuallyEditing = value; }
+	}
+	
+	// hierarchyMode changes how foldouts are drawn so the foldout triangle is drawn to the left,
+	// outside the rect of the control, rather than inside the rect.
+	// This way the text of the foldout lines up with the labels of other controls.
+	// hierarchyMode is primarily enabled for editors in the Inspector.
+	CSRAW private static bool s_HierarchyMode = false;
+	CSRAW public static bool hierarchyMode
+	{
+		get { return s_HierarchyMode; }
+		set { s_HierarchyMode = value; }
+	}
+	
+	// wideMode is used when the Inspector is wide and uses a more tidy and vertically compact layout forcertain controls.
+	CSRAW internal static bool s_WideMode = false;
+	CSRAW public static bool wideMode
+	{
+		get { return s_WideMode; }
+		set { s_WideMode = value; }
+	}
+	
+	// Context width is used for calculating the label width for various editor controls.
+	// In most cases the top level clip rect is a perfect context width.
+	CSRAW private static float s_ContextWidth = 0f;
+	CSRAW private static float CalcContextWidth ()
+	{
+		float output = GUIClip.GetTopRect ().width;
+		// If there's no top clip rect, fallback to using screen width.
+		if (output < 1f || output >= 40000)
+			output = Screen.width;
+
+		return output;
+	}
+	CSRAW internal static void LockContextWidth ()
+	{
+		s_ContextWidth = CalcContextWidth ();
+	}
+	CSRAW internal static void UnlockContextWidth ()
+	{
+		s_ContextWidth = 0f;
+	}
+	CSRAW private static float contextWidth {
+		get
+		{
+			if (s_ContextWidth > 0f)
+				return s_ContextWidth;
+
+			return CalcContextWidth ();
+		}
+	}
+
+	CSRAW private static float s_LabelWidth = 0f;
+	CSRAW public static float labelWidth {
+		get
+		{ 
+			if (s_LabelWidth > 0)
+				return s_LabelWidth;
+
+			if (s_HierarchyMode)
+				return Mathf.Max (contextWidth * 0.45f - 40, 120);
+			return 150;
+		}
+		set { s_LabelWidth = value; }
+	}
+	
+	CSRAW private static float s_FieldWidth = 0f;
+	CSRAW public static float fieldWidth {
+		get
+		{ 
+			if (s_FieldWidth > 0)
+				return s_FieldWidth;
+			
+			return 50;
+		}
+		set { s_FieldWidth = value; }
+	}
+	
+
+	// Make all ref::EditorGUI look like regular controls.
+	OBSOLETE warning LookLikeControls and LookLikeInspector modes are deprecated. Use EditorGUIUtility.labelWidth and EditorGUIUtility.fieldWidth to control label and field widths.
+	CSRAW public static void LookLikeControls (float labelWidth = 0, float fieldWidth = 0)
+	{
+		EditorGUIUtility.fieldWidth = fieldWidth;
+		EditorGUIUtility.labelWidth = labelWidth;
+	}
+	
+	// Make all ::ref::EditorGUI look like simplified outline view controls.
+	OBSOLETE warning LookLikeControls and LookLikeInspector modes are deprecated.
+	CSRAW public static void LookLikeInspector ()
+	{
+		EditorGUIUtility.fieldWidth = 0;
+		EditorGUIUtility.labelWidth = 0;
+	}
+
+	//*undocumented
+	CSRAW public static FocusType native = FocusType.Keyboard;
+	
+	internal static void SkinChanged ()
+	{
+		EditorStyles.UpdateSkinCache ();
+	}
+	
+	internal static Rect DragZoneRect (Rect position)
+	{
+		return new Rect (position.x, position.y, labelWidth, position.height);
+	}
+
+	CSRAW static internal void SetBoldDefaultFont (bool isBold) {
+		int wantsBold = isBold ? 1 : 0;
+		if (wantsBold != s_FontIsBold)
+		{
+			EditorGUIUtility.SetDefaultFont (isBold ? EditorStyles.boldFont : EditorStyles.standardFont);
+			s_FontIsBold = wantsBold;
+		}
+	}
+	
+	CSRAW static internal bool GetBoldDefaultFont () { return s_FontIsBold == 1 ? true : false; }
+	
+	// Creates an event
+	public static Event CommandEvent (string commandName) {
+		Event e = new Event ();
+        Internal_SetupEventValues (e);
+		e.type = EventType.ExecuteCommand;
+		e.commandName = commandName;
+		return e;
+	}
+
+    CUSTOM static private void Internal_SetupEventValues (object evt)
+    {
+        InputEvent* _evt = ExtractMonoObjectData<InputEvent*> (evt);
+        SetupEventValues (_evt);
+    }
+	
+	// Draw a color swatch.
+	CSRAW public static void DrawColorSwatch (Rect position, Color color) 
+	{
+		DrawColorSwatch (position, color, true);
+	}
+
+		
+	CSRAW internal static void DrawColorSwatch (Rect position, Color color, bool showAlpha) {
+		if (Event.current.type != EventType.Repaint)
+			return;
+		
+		Color oldColor = GUI.color;
+
+		// Calculate the alpha values to for GUI.Label. This way of doing undoes GUI.enabled's dimming of UI (which we don't want here)
+		float a = GUI.enabled ? 1 : 2;
+
+		// Set up the color to be drawn. Notice the special alpha handling.
+		// If we have multiple values, we do want the color to be affected
+		// by play mode tint, so we multiply with oldColor in that case.
+		GUI.color = EditorGUI.showMixedValue ? new Color (0.82f,0.82f,0.82f,a) * oldColor : new Color (color.r, color.g, color.b, a);
+		
+		GUIStyle gs = whiteTextureStyle;
+		gs.Draw (position, false, false, false, false);
+		
+		if (!EditorGUI.showMixedValue)
+		{
+			if (showAlpha)
+			{
+				// Draw alpha black background
+				GUI.color = new Color (0,0,0,a);
+				float alphaHeight = Mathf.Clamp (position.height * .2f, 2, 20);
+				position.yMin = position.yMax - alphaHeight;
+				gs.Draw (position, false, false, false, false);
+			
+				// Draw alpha white slider
+				GUI.color = new Color (1,1,1,a);
+				position.width *= Mathf.Clamp01 (color.a);
+				gs.Draw (position, false, false, false, false);
+			}
+		}
+		else
+		{
+			EditorGUI.BeginHandleMixedValueContentColor ();
+			gs.Draw (position, EditorGUI.mixedValueContent, false, false, false, false);
+			EditorGUI.EndHandleMixedValueContentColor ();
+		}
+
+		GUI.color = oldColor;
+	}
+	
+	/// *listonly*
+	public static void DrawCurveSwatch (Rect position, AnimationCurve curve, SerializedProperty property, Color color, Color bgColor) 
+	{
+		DrawCurveSwatchInternal (position, curve, null, property, null, color, bgColor, false, new Rect());
+	}
+	
+	// Draw a curve swatch.
+	public static void DrawCurveSwatch (Rect position, AnimationCurve curve, SerializedProperty property, Color color, Color bgColor, Rect curveRanges) 
+	{
+		DrawCurveSwatchInternal (position, curve, null, property, null, color, bgColor, true, curveRanges);
+	}
+
+	// Draw swatch with a filled region between two SerializedProperty curves.
+	public static void DrawRegionSwatch (Rect position, SerializedProperty property, SerializedProperty property2, Color color, Color bgColor, Rect curveRanges) 
+	{
+		DrawCurveSwatchInternal (position, null, null, property, property2, color, bgColor, true, curveRanges);
+	}
+	
+	// Draw swatch with a filled region between two curves.
+	public static void DrawRegionSwatch (Rect position, AnimationCurve curve, AnimationCurve curve2, Color color, Color bgColor, Rect curveRanges) 
+	{
+		DrawCurveSwatchInternal (position, curve, curve2, null, null, color, bgColor, true, curveRanges);
+	}	
+	
+	private static void DrawCurveSwatchInternal(Rect position, AnimationCurve curve, AnimationCurve curve2, SerializedProperty property, SerializedProperty property2, Color color, Color bgColor, bool useCurveRanges, Rect curveRanges)
+	{
+		if (Event.current.type != EventType.Repaint)
+			return;
+		
+		int previewWidth = (int)position.width;
+		int previewHeight = (int)position.height;
+		
+		// Draw background color
+		Color oldColor = GUI.color;
+		GUI.color = bgColor;
+		GUIStyle gs = whiteTextureStyle;
+		gs.Draw (position, false, false, false, false);
+		GUI.color = oldColor;
+		
+		if (property != null && property.hasMultipleDifferentValues)
+		{
+			// No obvious way to show that curve field has mixed values so we just draw
+			// the same content as for text fields since the user at least know what that means.
+			EditorGUI.BeginHandleMixedValueContentColor ();
+			GUI.Label (position, EditorGUI.mixedValueContent, "PreOverlayLabel");
+			EditorGUI.EndHandleMixedValueContentColor ();
+		}
+		else
+		{
+			Texture2D preview = null;
+			if (property != null)
+			{
+				if (property2 == null)
+					preview = useCurveRanges ? AnimationCurvePreviewCache.GetPreview(previewWidth, previewHeight, property, color, curveRanges) : AnimationCurvePreviewCache.GetPreview(previewWidth, previewHeight, property, color);
+				else 
+					preview = useCurveRanges ? AnimationCurvePreviewCache.GetPreview(previewWidth, previewHeight, property, property2, color, curveRanges) : AnimationCurvePreviewCache.GetPreview(previewWidth, previewHeight, property, property2, color);
+			}			
+			else if (curve != null)
+			{
+				if (curve2 == null)
+					preview = useCurveRanges ? AnimationCurvePreviewCache.GetPreview(previewWidth, previewHeight, curve, color, curveRanges) : AnimationCurvePreviewCache.GetPreview(previewWidth, previewHeight, curve, color);
+				else
+					preview = useCurveRanges ? AnimationCurvePreviewCache.GetPreview(previewWidth, previewHeight, curve, curve2, color, curveRanges) : AnimationCurvePreviewCache.GetPreview(previewWidth, previewHeight, curve, curve2, color);
+			}
+				
+			gs = GetBasicTextureStyle(preview);
+	
+			position.width = preview.width;
+			position.height = preview.height;
+			gs.Draw (position, false, false, false, false);
+		}
+	}
+	
+	// Convert a color from RGB to HSV color space.
+	public static void RGBToHSV (Color rgbColor, out float H, out float S, out float V) 
+	{	
+		// when blue is highest valued
+		if((rgbColor.b > rgbColor.g) && (rgbColor.b > rgbColor.r))
+			RGBToHSVHelper((float) 4, rgbColor.b, rgbColor.r, rgbColor.g, out H, out S, out V);
+		//when green is highest valued
+		else if(rgbColor.g > rgbColor.r)
+			RGBToHSVHelper((float) 2, rgbColor.g, rgbColor.b, rgbColor.r, out H, out S, out V);
+		//when red is highest valued
+		else
+			RGBToHSVHelper((float) 0, rgbColor.r, rgbColor.g, rgbColor.b, out H, out S, out V);
+	}
+
+	static void RGBToHSVHelper (float offset, float dominantcolor, float colorone, float colortwo, out float H, out float S, out float V)
+	{
+		V = dominantcolor;
+		//we need to find out which is the minimum color
+		if(V != 0)
+		{
+			//we check which color is smallest
+			float small = 0;
+			if(colorone > colortwo) small = colortwo;
+			else small = colorone;
+			
+			float diff = V - small;
+			
+			//if the two values are not the same, we compute the like this
+			if(diff != 0)
+			{	
+				//S = max-min/max
+				S = diff/V;
+				//H = hue is offset by X, and is the difference between the two smallest colors
+				H = offset + ((colorone-colortwo)/diff);
+			} else {
+				//S = 0 when the difference is zero
+				S = 0;
+				//H = 4 + (R-G) hue is offset by 4 when blue, and is the difference between the two smallest colors
+				H = offset + (colorone-colortwo);
+			}
+			
+			H /= 6;
+			
+			//conversion values			
+			if(H < 0)
+				H += 1.0f;
+		} else {
+			S = 0;
+			H = 0;
+		}
+	}
+
+	// Convert a set of HSV values to an RGB Color.
+	CSRAW public static Color HSVToRGB (float H, float S, float V) 
+	{
+		Color retval = Color.white;
+		if ( S == 0 ) {
+			retval.r = V;
+			retval.g = V;			
+			retval.b = V;
+		} else if (V == 0) {
+			retval.r = 0;
+			retval.g = 0;
+			retval.b = 0;
+		} else {
+			retval.r = 0;
+			retval.g = 0;
+			retval.b = 0;
+
+			//crazy hsv conversion
+			float t_S,t_V,h_to_floor;
+			
+			t_S = S;
+			t_V = V;
+			h_to_floor = H*6.0f;
+
+			int temp = (int) Mathf.Floor( h_to_floor );
+			float t = h_to_floor - ((float) temp );	
+			float var_1 = (t_V) * ( 1 - t_S );
+			float var_2 = t_V * ( 1 - t_S *  t);
+			float var_3 = t_V * ( 1 - t_S * ( 1 - t ) );
+		    
+			switch(temp) {
+			case 0:
+				retval.r = t_V; 
+				retval.g = var_3; 
+				retval.b = var_1;
+				break;
+				
+			case 1:
+				retval.r = var_2; 
+				retval.g = t_V; 
+				retval.b = var_1; 
+				break;
+			
+			case 2:
+				retval.r = var_1;
+				retval.g = t_V;
+				retval.b = var_3;
+				break;
+				
+			case 3:
+				retval.r = var_1;
+				retval.g = var_2;
+				retval.b = t_V;
+				break;
+				
+			case 4:
+				retval.r = var_3;
+				retval.g = var_1;
+				retval.b = t_V;
+				break;
+				
+			case 5:
+				retval.r = t_V;
+				retval.g = var_1;
+				retval.b = var_2;
+				break;
+			
+			case 6:
+				retval.r = t_V;
+				retval.g = var_3;
+				retval.b = var_1;
+				break;
+			
+			case -1:
+				retval.r = t_V;
+				retval.g = var_1;
+				retval.b = var_2;
+				break;
+			}
+			retval.r = Mathf.Clamp(retval.r, 0.0f, 1.0f);
+			retval.g = Mathf.Clamp(retval.g, 0.0f, 1.0f);
+			retval.b = Mathf.Clamp(retval.b, 0.0f, 1.0f);
+		}
+		return retval;
+	}
+
+	// The system copy buffer. 
+	CUSTOM_PROP new public static string systemCopyBuffer { return scripting_string_new(GetCopyBuffer ()); } { SetCopyBuffer (value); }
+
+	// Add a custom mouse pointer to a control
+	CSRAW public static void AddCursorRect (Rect position, MouseCursor mouse) {
+		AddCursorRect(position, mouse, 0);
+	}
+
+	CSRAW public static void AddCursorRect (Rect position, MouseCursor mouse, int controlID) {
+		if (Event.current.type == EventType.Repaint) {
+			Rect r = GUIClip.Unclip (position);
+			Rect clip = GUIClip.topmostRect;
+			Rect clipped = Rect.MinMaxRect (Mathf.Max (r.x, clip.x), Mathf.Max (r.y, clip.y), Mathf.Min (r.xMax, clip.xMax), Mathf.Min (r.yMax, clip.yMax));
+			
+			if (clipped.width <= 0 || clipped.height <= 0)
+				return;
+			Internal_AddCursorRect (clipped, mouse, controlID);
+		}
+	}
+
+	CUSTOM private static void Internal_AddCursorRect (Rect r, MouseCursor m, int controlID) {
+		OptimizedGUIBlock *block = GetCaptureGUIBlock ();
+		if (block) {
+			block->QueueCursorRect (r, (GUIView::MouseCursor)m);
+			return;
+		}
+		GUIView *view = GUIView::GetCurrent ();
+		if (view) {
+			view->AddCursorRect (r, (GUIView::MouseCursor)m, controlID);
+		} else {
+			ErrorString ("EditorGUIUtility.AddCursorRect called outside an editor OnGUI");
+		}
+	}
+
+	CUSTOM internal static void CleanCache (string text)
+	{
+		UTF16String utf(text.AsUTF8().c_str());
+		TextMeshGenerator2::CleanCache(utf);
+	}
+	
+	//*undocumented*
+	CUSTOM internal static void SetSearchIndexOfControlIDList (int index) 
+	{
+		GetGUIState().m_ObjectGUIState->m_IDList.SetSearchIndex(index);
+	}
+
+	//*undocumented*
+	CUSTOM internal static int GetSearchIndexOfControlIDList () 
+	{
+		return GetGUIState().m_ObjectGUIState->m_IDList.GetSearchIndex();
+	}
+	
+	CUSTOM internal static bool CanHaveKeyboardFocus (int id)
+	{
+		return GetGUIState().m_ObjectGUIState->m_IDList.CanHaveKeyboardFocus(id);
+	}
+
+	CSRAW
+	internal static EventType magnifyGestureEventType { get {return (EventType)1000;} }
+	internal static EventType swipeGestureEventType { get {return (EventType)1001;} }
+	internal static EventType rotateGestureEventType { get {return (EventType)1002;} }
+	
+	//*undocumented*
+	CUSTOM static void SetWantsMouseJumping(int wantz)
+	{
+		s_wantsMouseJumping = wantz;
+	}
+
+	CSRAW public static void ShowObjectPicker<T> (Object obj, bool allowSceneObjects, string searchFilter, int controlID) where T : Object
+	{
+		System.Type objType = typeof (T);
+		ObjectSelector.get.Show(obj, objType, null, allowSceneObjects);
+		ObjectSelector.get.objectSelectorID = controlID;
+		ObjectSelector.get.searchFilter = searchFilter;
+	}
+
+	CSRAW public static Object GetObjectPickerObject () 
+	{
+		return ObjectSelector.GetCurrentObject();
+	}
+
+	CSRAW public static int GetObjectPickerControlID ()
+	{
+		return ObjectSelector.get.objectSelectorID;
+	}	
+	
+END
+
+// User message types.
+ENUM MessageType
+	// Neutral message
+	None = 0,
+	// Info message
+	Info = 1,
+	// Warning message
+	Warning = 2,
+	// Error message
+	Error = 3,
+END
+
+// Enum that selects which skin to return from EditorGUIUtility.GetBuiltinSkin
+ENUM EditorSkin
+	// The skin used for game views.
+	Game = 0,
+	// The skin used for inspectors.
+	Inspector = 1,
+	// The skin used for scene views.
+	Scene = 2,
+END
+
+// Custom mouse cursor shapes used with EditorGUIUtility.AddCursorRect.
+// Must Match EditorWindow::MouseCursor
+ENUM MouseCursor 
+	// Normal pointer arrow
+	Arrow = 0, 
+	// Text cursor
+	Text = 1, 
+	// Vertical resize arrows
+	ResizeVertical = 2, 
+	// Horizontal resize arrows
+	ResizeHorizontal = 3,
+	// Arrow with a Link badge (for assigning pointers)
+	Link = 4,
+	// Arrow with small arrows for indicating sliding at number fields
+	SlideArrow = 5,
+	// Resize up-right for window edges
+	ResizeUpRight = 6,
+	// Resize up-Left for window edges.
+	ResizeUpLeft = 7,
+	// Arrow with the move symbol next to it for the sceneview
+	MoveArrow = 8,
+	// Arrow with the rotate symbol next to it for the sceneview
+	RotateArrow = 9,
+	// Arrow with the scale symbol next to it for the sceneview
+	ScaleArrow = 10,
+	// Arrow with the plus symbol next to it
+	ArrowPlus = 11,
+	// Arrow with the minus symbol next to it
+	ArrowMinus = 12,
+	// Cursor with a dragging hand for pan
+	Pan = 13,
+	// Cursor with an eye for orbit
+	Orbit = 14,
+	// Cursor with a magnifying glass for zoom
+	Zoom = 15,
+	// Cursor with an eye and stylized arrow keys for FPS navigation
+	FPS = 16,
+	// The current user defined cursor
+	CustomCursor = 17,
+	// Split resize up down arrows
+	SplitResizeUpDown = 18,
+	// Split resize left right arrows
+	SplitResizeLeftRight = 19
+END
+
+// Enum for tracking what styles the editor uses
+CSRAW internal enum EditorLook
+{
+	// Hasn't been set
+	Uninitialized = 0,
+	// Looks like regular controls
+	LikeControls = 1,
+	// Looks like inspector
+	LikeInspector = 2
+}
+
+CLASS internal GUILayoutFadeGroup : GUILayoutGroup
+CSRAW
+    public float fadeValue;
+    public bool wasGUIEnabled;
+    public Color guiColor;
+    
+    public override void CalcHeight ()
+    {
+        base.CalcHeight ();
+        minHeight *= fadeValue;
+        maxHeight *= fadeValue;
+    }
+END
+
+
+CLASS internal OptimizedGUIBlock
+	C++RAW
+ #define GET ExtractMonoObjectData<OptimizedGUIBlock*> (self)
+	
+CSRAW
+	[System.NonSerialized]
+	private IntPtr m_Ptr;
+
+	// Do we have a valid capture of Draw commands?
+	bool m_Valid = false;
+
+	// Are we currently recording commands?
+	bool m_Recording = false;
+	
+	// if we're inside an OptimizedBlock and code in there uses an event, we invalidate the block to handle e.g. a mousedown changing a button
+	bool m_WatchForUsed = false;
+	
+	// The keyboard control we were generated with
+	int m_KeyboardControl;
+
+	// The last search index when ended recording the block, so we can restore that index after executing the block
+	int m_LastSearchIndex;
+
+	int m_ActiveDragControl;
+	
+	Color m_GUIColor;
+	
+	// Rect we're sorta inside. Used so we invalidate when scrolling and getting moved about (needed for clipping - DOH!)
+	Rect m_Rect;
+
+	public OptimizedGUIBlock ()
+	{
+		Init ();		
+	}
+	
+	CSRAW ~OptimizedGUIBlock ()
+	{
+		if (m_Ptr != IntPtr.Zero)
+		{
+			// Do not use Console.WriteLine here since that in some corner cases crashes unity when done from domain unloading.
+			Debug.Log("Failed cleaning up Optimized GUI Block");
+		}
+	}
+
+	CUSTOM private void Init ()
+	{
+		GET = new OptimizedGUIBlock ();
+	}
+	
+	CUSTOM void Dispose ()
+	{
+		delete GET;
+		GET = NULL;
+	}
+
+	CSRAW public bool Begin (bool hasChanged, Rect position) 
+	{
+		if (hasChanged)
+			m_Valid = false;
+	
+		if (Event.current.type == EventType.Repaint)
+		{
+			if (GUIUtility.keyboardControl != m_KeyboardControl) 
+			{
+				m_Valid = false;
+//				Debug.Log ("Invalidated keyboard");
+				m_KeyboardControl = GUIUtility.keyboardControl;
+			}
+
+			if (DragAndDrop.activeControlID != m_ActiveDragControl) 
+			{
+				m_Valid = false;
+//				Debug.Log ("Invalidated DragAndDrop.activeControlID");
+				m_ActiveDragControl = DragAndDrop.activeControlID;
+			}
+		
+			if (GUI.color != m_GUIColor) 
+			{
+				m_Valid = false;
+//				Debug.Log ("Invalidated color");
+				m_GUIColor = GUI.color;
+			}
+
+			position = GUIClip.Unclip (position);
+			if (m_Valid && position != m_Rect) 
+			{
+				m_Rect = position;
+//				Debug.Log ("Invalidated position");
+				m_Valid = false;
+			}
+	
+			if (EditorGUI.isCollectingTooltips)
+				return true;
+	
+			if (m_Valid)
+				return false;
+			else	
+			{
+				m_Recording = true;
+				BeginRecording ();
+				return true;
+			}
+		}
+		
+		if (Event.current.type == EventType.Used)
+			return false;
+		
+		// If this event has not been used yet, we want to check if it gets used inside this optimized block
+		// (if the event gets used, we assume that the block is no longer valid.
+		if (Event.current.type != EventType.Used)
+			m_WatchForUsed = true;
+		return true;
+	}
+	
+	CSRAW public void End ()
+	{
+		bool wasRecording = m_Recording;
+		if (m_Recording) 
+		{
+			EndRecording ();
+			m_Recording = false;
+			m_Valid = true;
+			m_LastSearchIndex = EditorGUIUtility.GetSearchIndexOfControlIDList ();
+		}
+	
+		if (Event.current == null)
+			Debug.LogError ("Event.current is null");
+
+		if (Event.current.type == EventType.Repaint && !EditorGUI.isCollectingTooltips)
+		{
+			Execute();
+			if (!wasRecording)
+				EditorGUIUtility.SetSearchIndexOfControlIDList (m_LastSearchIndex);
+		}
+
+		if (m_WatchForUsed && Event.current.type == EventType.Used) 
+		{
+			m_Valid = false;
+		}
+		m_WatchForUsed = false;
+
+	}
+
+	CUSTOM void BeginRecording ()
+	{
+		GET->ClearForReuse ();
+		SetCaptureGUIBlock (GET);
+	}
+	
+	CUSTOM void EndRecording () 
+	{
+		SetCaptureGUIBlock (NULL);	
+	}
+	
+	CUSTOM void Execute ()
+	{
+		GET->Execute ();
+	}
+	
+END
+
+
+CLASS internal InspectorState
+	CUSTOM internal static void SetBool (string key, bool value)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().SetBool (key, value);
+	}
+	CUSTOM internal static bool GetBool (string key, bool defaultValue)
+	{
+		return GetInspectorExpandedState ().GetInspectorState ().GetBool (key, defaultValue);
+	}
+	CUSTOM internal static void EraseBool (string key)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().EraseBool (key);
+	}		
+
+	CUSTOM internal static void SetFloat (string key, float value)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().SetFloat (key, value);
+	}
+	CUSTOM internal static float GetFloat (string key, float defaultValue)
+	{
+		return GetInspectorExpandedState ().GetInspectorState ().GetFloat (key, defaultValue);
+	}
+	CUSTOM internal static void EraseFloat (string key)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().EraseFloat (key);
+	}
+
+	CUSTOM internal static void SetInt (string key, int value)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().SetInt (key, value);
+	}
+	CUSTOM internal static int GetInt (string key, int defaultValue)
+	{
+		return GetInspectorExpandedState ().GetInspectorState ().GetInt (key, defaultValue);
+	}
+	CUSTOM internal static void EraseInt (string key)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().EraseInt (key);
+	}
+
+	CUSTOM internal static void SetString (string key, string value)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().SetString (key, value);
+	}
+	CUSTOM internal static string GetString (string key, string defaultValue)
+	{
+		return scripting_string_new(GetInspectorExpandedState ().GetInspectorState ().GetString (key, defaultValue));
+	}	
+	CUSTOM internal static void EraseString (string key)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().EraseString (key);
+	}
+		
+	CUSTOM internal static void SetVector3 (string key, Vector3 value)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().SetVector3 (key, value);
+	}
+	CUSTOM internal static Vector3 GetVector3 (string key, Vector3 defaultValue)
+	{
+		return GetInspectorExpandedState ().GetInspectorState ().GetVector3 (key, defaultValue);
+	}
+	CUSTOM internal static void EraseVector3 (string key)
+	{
+		GetInspectorExpandedState ().GetInspectorState ().EraseVector3 (key);
+	}	
+END
+
+C++RAW
+#undef GET
+
+CSRAW
+}	/* End namespace */

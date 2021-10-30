@@ -1,0 +1,51 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Editor/Src/AssetPipeline/AssetImporter.h"
+#include "Runtime/Utilities/FileUtilities.h"
+#include "Runtime/Scripting/Scripting.h"
+
+CSRAW
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using UnityEngine;
+using Object=UnityEngine.Object;
+
+namespace UnityEditor
+{
+
+
+// Base class from which asset importers for specific asset types derive.
+NONSEALED_CLASS AssetImporter : Object
+
+	// The path name of the asset for this importer (RO)
+	CUSTOM_PROP string assetPath { return scripting_string_new(self->GetAssetPathName()); }
+	
+	//*undocumented* An timestamp value that can be used to determine if the asset has been modified on disk. (RO)
+	CUSTOM_PROP ulong assetTimeStamp { 
+		DateTime metaTimeStamp = GetContentModificationDate ( self->GetTextMetaDataPath());
+		DateTime assetTimeStamp = GetContentModificationDate ( self->GetAssetPathName() );
+		
+		DateTime tmp = metaTimeStamp < assetTimeStamp ? assetTimeStamp : metaTimeStamp ;
+		
+		UInt64 res=tmp.fraction;
+		res |= (((UInt64) tmp.lowSeconds) << 16);
+		res |= (((UInt64) tmp.highSeconds) << 32);
+		
+		return res;
+	}
+
+	// Get or set any user data.
+	CUSTOM_PROP string userData {return scripting_string_new(self->GetUserData());} {self->SetUserData(value);}
+
+	// Retrieves the asset importer for the asset at /path/.
+	CUSTOM static AssetImporter GetAtPath (string path)
+	{
+		return Scripting::ScriptingWrapperFor(FindAssetImporterAtAssetPath (path));
+	}
+
+END
+
+CSRAW }

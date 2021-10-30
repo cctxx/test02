@@ -1,0 +1,40 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Configuration/UnityConfigure.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/NavMesh/NavMeshObstacle.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+
+CSRAW
+
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace UnityEngine
+{
+
+// Navigation mesh obstacle.
+CLASS NavMeshObstacle : Behaviour
+
+	// Obstacle height.
+	AUTO_PROP float height GetHeight SetHeight
+
+	// Obstacle radius.
+	AUTO_PROP float radius GetRadius SetRadius
+
+	// Obstacle velocity.
+	AUTO_PROP Vector3 velocity GetVelocity SetVelocity
+
+	CONDITIONAL ENABLE_NAVMESH_CARVING
+	AUTO_PROP bool carving GetCarving SetCarving
+
+	CONDITIONAL ENABLE_NAVMESH_CARVING
+	AUTO_PROP float carvingMoveThreshold GetMoveThreshold SetMoveThreshold
+
+END
+
+CSRAW }
+

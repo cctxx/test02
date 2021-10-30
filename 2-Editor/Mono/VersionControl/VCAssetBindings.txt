@@ -1,0 +1,119 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Editor/Src/VersionControl/VCAsset.h"
+#include "Editor/Src/VersionControl/VCCache.h"
+#include "Editor/Src/VersionControl/VCProvider.h"
+#include "Editor/Src/VersionControl/VCTask.h"
+#include "Runtime/Allocator/MemoryMacros.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using UnityEditor;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace UnityEditor.VersionControl
+{
+
+//*undocumented* 
+CLASS Asset
+	CSRAW
+	
+	string m_guid;
+
+	C++RAW
+
+	#define SELF ExtractMonoObjectData<VCAsset*>(self)
+	#define GET(x) ExtractMonoObjectData<VCAsset*>(x)
+
+//*undocumented* 
+CSRAW [Flags]
+ENUM States
+	None = 0,
+	Local = 1,
+	Synced = 2,
+	OutOfSync = 4,
+	Missing = 8,
+	CheckedOutLocal = 16,
+	CheckedOutRemote = 32,
+	DeletedLocal = 64,
+	DeletedRemote = 128,
+	AddedLocal = 256,
+	AddedRemote = 512,
+	Conflicted = 1024,
+	LockedLocal = 2048,
+	LockedRemote = 4096,
+	Updating = 8192,
+	ReadOnly = 16384,
+	MetaFile = 32768,
+END
+
+	//*undocumented*
+	THREAD_SAFE
+	CUSTOM private void InternalCreateFromString(string clientPath)
+	{
+		SELF = NULL;
+		SELF = UNITY_NEW(VCAsset, kMemVersionControl)  (clientPath);
+	}		
+
+	//*undocumented* 
+	CSRAW
+	public Asset(string clientPath)
+	{
+		InternalCreateFromString(clientPath);
+	}
+
+ 	THREAD_SAFE
+	CUSTOM public void Dispose ()
+	{
+		UNITY_DELETE(SELF, kMemVersionControl);
+		SELF = NULL;
+	}
+
+	CSRAW
+	~Asset()
+	{
+		Dispose();
+	}
+
+	//*undocumented
+	THREAD_SAFE
+	CUSTOM bool IsChildOf(Asset other)
+	{
+		return SELF->IsChildOf(*GET(other));
+	}
+
+	THREAD_SAFE
+	CUSTOM_PROP States state {VCAsset ass; if(GetVCCache().GetAssetByGUID(SELF->m_guid, ass)) return ass.GetState(); else return SELF->GetState();}
+	THREAD_SAFE
+	CUSTOM_PROP string path {return scripting_string_new(SELF->GetPath());}
+	THREAD_SAFE
+	CUSTOM_PROP bool isFolder {return SELF->IsFolder();}
+	THREAD_SAFE
+	CUSTOM_PROP bool readOnly {return SELF->GetState() & kReadOnly;}
+	THREAD_SAFE
+	CUSTOM_PROP bool isMeta {return SELF->IsMeta();}
+	THREAD_SAFE
+	CUSTOM_PROP bool locked {return SELF->GetState() & (kLockedLocal | kLockedRemote) ;}
+	THREAD_SAFE
+	CUSTOM_PROP string name {return scripting_string_new(SELF->GetName());}
+	THREAD_SAFE
+	CUSTOM_PROP string fullName {return scripting_string_new(SELF->GetFullName());}
+	THREAD_SAFE
+	CUSTOM_PROP bool isInCurrentProject {return SELF->IsInCurrentProject();}
+
+	C++RAW
+
+	#undef GET
+	#undef SELF
+END
+
+CSRAW
+}

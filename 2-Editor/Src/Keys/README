@@ -1,0 +1,7 @@
+This directory holds public keys for our partners who need to be able to sign and verify files for one reason or another.
+We convert these to c++ headers to embed them into Unity.
+
+The process for doing this: 
+ * Generate the header: $(TOP)/Tools/Build/DumpBinaryToHeader.pl partnerkey.pub
+ * Add the new header to PublicKeys.h
+ * Commit BOTH the key and the header: hg add partnerkey.pub partnerkey.h; hg commit

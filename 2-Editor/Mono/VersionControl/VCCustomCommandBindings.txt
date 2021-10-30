@@ -1,0 +1,61 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Runtime/Scripting/Backend/ScriptingTypeRegistry.h"
+#include "Runtime/Scripting/Backend/ScriptingBackendApi.h"
+
+#include "Editor/Src/VersionControl/VCPlugin.h"
+#include "Editor/Src/VersionControl/VCProvider.h"
+#include "Editor/Src/VersionControl/VCTask.h"
+
+#include "Runtime/Allocator/MemoryMacros.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using UnityEditor;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace UnityEditor.VersionControl
+{
+
+//*undocumented* 
+CSRAW [Flags]
+ENUM internal CommandContext
+	Global = 1,
+END
+
+// Keep internal and undocumented until we expose more functionality
+//*undocumented
+CLASS internal CustomCommand
+	
+	CSRAW IntPtr m_thisDummy;
+	
+	C++RAW
+
+	#define SELF ExtractMonoObjectData<VCCustomCommand*>(self)
+
+	CUSTOM Task StartTask()
+	{
+		return CreateManagedTask(GetVCProvider().StartCustomCommandTask(SELF->name));
+	}
+
+	THREAD_SAFE
+	CUSTOM_PROP string name {return scripting_string_new(SELF->name);}
+	THREAD_SAFE
+	CUSTOM_PROP string label {return scripting_string_new(SELF->label);}
+	THREAD_SAFE
+	CUSTOM_PROP CommandContext context {return SELF->context;}
+	
+	C++RAW
+ #undef SELF
+END
+
+CSRAW
+}

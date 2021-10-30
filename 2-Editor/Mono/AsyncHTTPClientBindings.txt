@@ -1,0 +1,229 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/Utility/CurlRequest.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Mono/MonoScript.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Runtime/Scripting/Backend/ScriptingTypes.h"
+#include "Runtime/Scripting/ScriptingManager.h"
+#include "Runtime/Utilities/File.h"
+#include "Runtime/Utilities/FileUtilities.h"
+#include "Runtime/Graphics/Texture2D.h"
+#include "Runtime/Graphics/ImageConversion.h"
+#include "Editor/Src/PackageUtility.h"
+#include "Runtime/Scripting/Scripting.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngineInternal;
+using UnityEditorInternal;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.IO;
+
+namespace UnityEditor
+{
+
+C++RAW
+
+
+class AsyncHTTPClientRequest: public CurlRequestMessage
+{
+private:
+	int m_doneDelegate;
+	int m_doneDelegateDomainId;
+	int m_progressDelegate;
+	int m_progressDelegateDomainId;
+	
+	// Should match AsyncHTTPClient.State
+	enum State {
+		INIT,
+		CONNECTING,
+		CONNECTED,
+		UPLOADING,
+		DOWNLOADING,
+		CONFIRMING,
+		DONE_OK,
+		DONE_FAILED,
+		ABORTED,
+		TIMEOUT
+	};
+
+	void OnDownloadProgress(State state, size_t downloaded, size_t totalSize)
+	{
+		if ( m_progressDelegate && m_progressDelegateDomainId == MonoDomainGetUniqueId() ) 
+		{
+			MonoObject* delegate = mono_gchandle_get_target(m_progressDelegate);
+			if(delegate)
+			{
+				int intState = state;
+				int intSiz1 = downloaded;
+				int intSiz2 = totalSize;
+				int* argumentList[] = {  &intState, &intSiz1, &intSiz2 };
+				MonoException* exception;
+				mono_runtime_delegate_invoke(delegate, (void**)argumentList, &exception);
+				if(exception)
+					Scripting::LogException(exception, 0);
+			}
+		}
+	}
+	
+public:
+	AsyncHTTPClientRequest(const string& tag, const string& url, const std::vector<std::string>& headers, const string& method, const string& data, MonoObject* doneDelegate, MonoObject* progressDelegate)
+		: m_doneDelegate(0)
+		, m_progressDelegate(0)
+	{
+		m_Tag = tag;
+		m_Method = method;
+		m_PostData = data;
+		m_ShouldAbortOnExit = true;
+		m_Uri = url;
+        m_AllowCaching=true;
+        
+		if ( doneDelegate )
+		{
+			m_doneDelegate = mono_gchandle_new (doneDelegate, 0);
+			m_doneDelegateDomainId = MonoDomainGetUniqueId();
+		}
+		if ( progressDelegate )
+		{
+			m_progressDelegate = mono_gchandle_new (progressDelegate, 0);
+			m_progressDelegateDomainId = MonoDomainGetUniqueId();
+		}
+		m_Headers = headers;
+		
+	}
+	~AsyncHTTPClientRequest()
+	{
+		if ( m_doneDelegate && m_doneDelegateDomainId == MonoDomainGetUniqueId()) 
+			mono_gchandle_free(m_doneDelegate);
+		if ( m_progressDelegate && m_progressDelegateDomainId == MonoDomainGetUniqueId()) 
+			mono_gchandle_free(m_progressDelegate);
+	}
+	
+	State GetDoneState() {
+		if (m_Success)
+		{
+			return DONE_OK;
+		}
+		else
+		{
+			switch (m_ResponseCode) {
+			case 299:
+				return ABORTED;
+			case 408:
+				return TIMEOUT;
+			default:
+				return DONE_FAILED;
+			}
+		}
+	}
+	
+	virtual void Done()
+	{
+		if ( m_doneDelegate && m_doneDelegateDomainId == MonoDomainGetUniqueId()) 
+		{
+			MonoObject* delegate = mono_gchandle_get_target(m_doneDelegate);
+			if(delegate)
+			{
+				State state=GetDoneState();
+
+				void* argumentList[] = { &state, &m_ResponseCode };
+				MonoException* exception;
+				mono_runtime_delegate_invoke(delegate, argumentList, &exception);
+				if(exception)
+					Scripting::LogException(exception, 0);
+			}
+		}
+	}
+	
+	const string& GetString() const
+	{
+		return m_Result;
+	}
+
+	Texture2D* GetTexture(bool markNonReadable) const
+	{
+		// Create the texture
+		Texture2D* tex = CreateObjectFromCode<Texture2D>();
+
+		if (m_Success)
+		{
+			LoadMemoryBufferIntoTexture( *tex, (UInt8*) m_Result.c_str(), m_Result.size(), kLoadImageUncompressed, markNonReadable );
+			tex->SetReadAllowed(true);
+		}
+		else
+		{
+			LoadMemoryBufferIntoTexture( *tex, NULL, 0, kLoadImageUncompressed, markNonReadable );
+		}
+		return tex;
+	}
+	
+	
+	virtual void Progress(size_t fetched, size_t total)
+	{
+		OnDownloadProgress(DOWNLOADING, fetched, total);
+	}
+	
+	virtual void Connecting()
+	{
+		OnDownloadProgress(CONNECTING, 0, 1);
+	}
+};
+
+
+CLASS internal AsyncHTTPClient
+
+CSRAW private delegate void RequestProgressCallback(AsyncHTTPClient.State status, int downloaded, int totalSize);
+CSRAW private delegate void RequestDoneCallback(AsyncHTTPClient.State status, int httpStatus);
+
+CUSTOM private static IntPtr SubmitClientRequest(string tag, string url, string[] headers, string method, string data, RequestDoneCallback doneDelegate, RequestProgressCallback progressDelegate = null)
+{
+	vector<string> cppHeaders;
+	StringMonoArrayToVector(headers, cppHeaders);
+	AsyncHTTPClientRequest *pMessage = new AsyncHTTPClientRequest(tag, url, cppHeaders, method, data, doneDelegate, progressDelegate );
+	CurlRequestGet(pMessage, kCurlRequestGroupAsyncHTTPClient);
+	return (void*)pMessage;
+}
+
+CUSTOM private static byte[] GetBytesByHandle(IntPtr handle)
+{
+	if (handle == NULL) return NULL;
+	const string& result = ((AsyncHTTPClientRequest *)handle)->GetString();
+	ScriptingArray* byteArray =  CreateScriptingArray<UInt8>( (UInt8*) result.c_str(), result.size(), GetScriptingManager().GetCommonClasses().byte );
+	return byteArray;
+}
+
+CUSTOM private static Texture2D GetTextureByHandle(IntPtr handle)
+{
+	if (handle == NULL) return NULL;
+
+	return Scripting::ScriptingWrapperFor(((AsyncHTTPClientRequest *)handle)->GetTexture(false));
+}
+
+CUSTOM public static void AbortByTag(string tag)
+{
+	CurlRequestAbortTag(tag, kCurlRequestGroupAsyncHTTPClient);
+}
+
+CUSTOM private static void AbortByHandle(IntPtr handle)
+{
+	if (handle != NULL)
+		CurlRequestAbort((AsyncHTTPClientRequest *)handle, kCurlRequestGroupAsyncHTTPClient);
+}
+
+
+END
+
+CSRAW
+}

@@ -1,0 +1,965 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Camera/Camera.h"
+#include "Runtime/Camera/RenderManager.h"
+#include "Runtime/Shaders/Material.h"
+#include "Editor/Platform/Interface/EditorWindows.h"
+#include "Editor/Src/Picking.h"
+#include "Editor/Src/Gizmos/GizmoUtil.h"
+#include "Editor/Src/ParticleSystem/ParticleSystemEditor.h"
+#include "Runtime/Camera/CameraUtil.h"
+#include "Runtime/GfxDevice/GfxDevice.h"
+#include "Runtime/Camera/HaloManager.h"
+#include "Runtime/Camera/Flare.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+#include "Runtime/Camera/Culler.h"
+#include "Runtime/Graphics/Texture2D.h"
+#include <limits>
+#include <vector>
+
+extern ColorRGBAf g_EditorCameraWireframeColor;
+extern ColorRGBAf g_EditorCameraOverlayColor;
+extern ColorRGBAf g_EditorCameraActiveColor;
+extern ColorRGBAf g_EditorCameraOtherSelectedColor;
+
+
+CSRAW
+using System;
+using UnityEngine;
+using UnityEngineInternal;
+using UnityEditorInternal;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace UnityEditor
+{
+
+
+// Drawing modes for Handles.DrawCamera.
+ENUM DrawCameraMode
+	// Draw the camera like it would be drawn in-game. This uses the clear flags of the camera.
+	Normal = -1,
+	// Draw the camera textured with selection wireframe and no background clearing.
+	Textured = 0,
+	// Draw the camera in wireframe and no background clearing.
+	Wireframe = 1,
+	// Draw the camera where all objects have a wireframe overlay. and no background clearing.
+	TexturedWire = 2,
+	// Draw color-coded render paths. Objects are colored Green for Deferred, Yellow for Forward and Red for VertexLit.
+	RenderPaths = 3,
+	// Draw textured with overlaid lightmap resolution grid.
+	LightmapResolution = 4
+END
+
+// Grid drawing params for Handles.DrawCamera.
+STRUCT internal DrawGridParameters
+    CSRAW public Vector3 pivot;
+    CSRAW public Color   color;
+    CSRAW public float   size;
+    CSRAW public float   alphaX;
+    CSRAW public float   alphaY;
+    CSRAW public float   alphaZ;
+END
+
+
+BEGIN DOC
+Various drawing stuff.
+Scene View style 3D GUI controls.
+<dl>
+<dt>Setting up</dt>
+<dd>You must begin with a call to DrawCamera in order to set up the current camera. All 3d stuff done after DrawCamera uses the camera that was rendered.</dd>
+<dt>Drawing stuff</dd>
+<dd>	You can draw 3D gizmo-like stuff. SA: ::ref::CubeCap, ::ref::DrawLine. Set the color of them with Handles.color</dd>
+<dt>Traditional 2D GUI</dt>
+<dd>	After having made a call to DrawCamera, you need to wrap traditional GUI calls in a Handles.BeginGUI / ::ref::EndGUI pair. </dd>
+<dt>Converting coordinate systems</dt>
+<dd>Use HandleUtility.GUIPointToWorldRay  and HandleUtility.WorldToGUIPoint to convert coordinates between 2D GUI and 3D world coordinates.</dd>
+</dl>
+END DOC
+CLASS Handles 
+	// The function to use for drawing the handle e.g. Handles.RectangleCap.
+	CSRAW public delegate void DrawCapFunction(int controlID, Vector3 position, Quaternion rotation, float size);
+
+	// Color of the X axis handle
+	CSRAW internal static PrefColor xAxisColor = new PrefColor ("Scene/X Axis", 219f / 255, 62f / 255, 29f / 255, .93f);
+	// Color of the Y axis handle
+	CSRAW internal static PrefColor yAxisColor = new PrefColor ("Scene/Y Axis", 154f / 255, 243f / 255, 72f / 255, .93f);
+	// Color of the Z axis handle
+	CSRAW internal static PrefColor zAxisColor = new PrefColor ("Scene/Z Axis", 58f / 255, 122f / 255, 248f / 255, .93f);
+	// Color of the center handle
+	CSRAW internal static PrefColor centerColor = new PrefColor ("Scene/Center Axis", .8f, .8f, .8f, .93f);
+	// color for handles the currently active handle
+	CSRAW internal static PrefColor selectedColor = new PrefColor ("Scene/Selected Axis", 246f / 255, 242f / 255, 50f / 255, .89f);
+	// soft color for general stuff - used to draw e.g. the arc selection while dragging
+	CSRAW internal static PrefColor secondaryColor = new PrefColor ("Scene/Guide Line", .5f, .5f, .5f, .2f);
+	// internal color for static handles
+	CSRAW internal static Color staticColor = new Color(.5f, .5f, .5f, 0f);
+	// internal blend ratio for static colors
+	CSRAW internal static float staticBlend = 0.6f;
+
+	CSRAW internal static float backfaceAlphaMultiplier = 0.2f;
+	CSRAW internal static Color s_ColliderHandleColor = new Color(145f, 244f, 139f, 210f) / 255;
+	CSRAW internal static Color s_ColliderHandleColorDisabled = new Color(84, 200f, 77f, 140f) / 255; 
+	CSRAW internal static Color s_BoundingBoxHandleColor = new Color(255, 255, 255, 150) / 255;
+
+	internal static int s_SliderHash = "SliderHash".GetHashCode();
+	internal static int s_Slider2DHash = "Slider2DHash".GetHashCode();
+	internal static int s_FreeRotateHandleHash = "FreeRotateHandleHash".GetHashCode();
+	internal static int s_RadiusHandleHash = "RadiusHandleHash".GetHashCode();
+	internal static int s_xAxisMoveHandleHash  = "xAxisFreeMoveHandleHash".GetHashCode();
+	internal static int s_yAxisMoveHandleHash  = "yAxisFreeMoveHandleHash".GetHashCode();
+	internal static int s_zAxisMoveHandleHash  = "xAxisFreeMoveHandleHash".GetHashCode();	
+	internal static int s_FreeMoveHandleHash  = "FreeMoveHandleHash".GetHashCode();
+	internal static int s_xzAxisMoveHandleHash = "xzAxisFreeMoveHandleHash".GetHashCode();
+	internal static int s_xyAxisMoveHandleHash = "xyAxisFreeMoveHandleHash".GetHashCode();
+	internal static int s_yzAxisMoveHandleHash = "yzAxisFreeMoveHandleHash".GetHashCode();
+	internal static int s_ScaleSliderHash = "ScaleSliderHash".GetHashCode();
+	internal static int s_ScaleValueHandleHash = "ScaleValueHandleHash".GetHashCode();
+	internal static int s_DiscHash = "DiscHash".GetHashCode();
+	internal static int s_ButtonHash = "ButtonHash".GetHashCode();
+	
+	// Are handles lit?
+	CSRAW public static bool lighting { get { return s_Lighting; } set { s_Lighting = value; } }
+	CSRAW static bool s_Lighting = true;
+
+	// Colors of the handles
+	CSRAW public static Color color { get { return s_Color; } set {s_Color = value; } }
+	CSRAW static Color s_Color;
+	
+	// Matrix for all handle operations
+	CSRAW public static Matrix4x4 matrix { get { return s_Matrix; } set { s_Matrix = value; s_InverseMatrix = value.inverse; } }
+	CSRAW static internal Matrix4x4 s_Matrix = Matrix4x4.identity, s_InverseMatrix = Matrix4x4.identity;
+	
+	// Make a 3D Scene view position handle.
+	public static Vector3 PositionHandle (Vector3 position, Quaternion rotation) 
+	{
+		return DoPositionHandle(position, rotation);
+	}	
+
+	// Make a Scene view rotation handle.
+	public static Quaternion RotationHandle (Quaternion rotation, Vector3 position) 
+	{
+		return DoRotationHandle(rotation, position);
+	}
+
+	// Make a Scene view scale handle
+	public static Vector3 ScaleHandle (Vector3 scale, Vector3 position, Quaternion rotation, float size) 
+	{		
+		return DoScaleHandle(scale, position, rotation, size);
+	}
+	///*listonly*	
+	public static float RadiusHandle (Quaternion rotation, Vector3 position, float radius, bool handlesOnly) {
+		return DoRadiusHandle(rotation, position, radius, handlesOnly);
+	}	
+
+	// Make a Scene view radius handle
+
+
+	public static float RadiusHandle (Quaternion rotation, Vector3 position, float radius) {
+		return DoRadiusHandle(rotation, position, radius, false);
+	}
+
+	// Make a Scene View cone handle
+	internal static Vector2 ConeHandle (Quaternion rotation, Vector3 position, Vector2 angleAndRange, float angleScale, float rangeScale, bool handlesOnly) {
+		return DoConeHandle(rotation, position, angleAndRange, angleScale, rangeScale, handlesOnly);
+	}
+
+	// Make a Scene View cone frustrum handle
+	internal static Vector3 ConeFrustrumHandle (Quaternion rotation, Vector3 position, Vector3 radiusAngleRange) {
+		return DoConeFrustrumHandle (rotation, position, radiusAngleRange);
+	}
+
+	/// *listonly*
+	CSRAW public static Vector3 Slider (Vector3 position, Vector3 direction) 
+	    { return Slider (position, direction, HandleUtility.GetHandleSize (position), ArrowCap, -1); }
+	// Make a 3D slider
+	CSRAW public static Vector3 Slider (Vector3 position, Vector3 direction, float size, DrawCapFunction drawFunc, float snap) {
+		int id = GUIUtility.GetControlID (s_SliderHash, FocusType.Keyboard);
+		return UnityEditorInternal.Slider1D.Do(id, position, direction, size, drawFunc, snap);
+	}
+
+	// Slide a handle in a 2D plane
+
+	CSRAW public static Vector3 Slider2D (int id, Vector3 handlePos, Vector3 offset, Vector3 handleDir, Vector3 slideDir1, Vector3 slideDir2,  float handleSize, DrawCapFunction drawFunc, Vector2 snap, bool drawHelper=false) {
+		return UnityEditorInternal.Slider2D.Do(id, handlePos, offset, handleDir, slideDir1, slideDir2, handleSize, drawFunc, snap, drawHelper);
+	}
+
+	/// *listonly*
+	CSRAW public static Vector3 Slider2D (Vector3 handlePos, Vector3 handleDir, Vector3 slideDir1, Vector3 slideDir2,  float handleSize, DrawCapFunction drawFunc, Vector2 snap, bool drawHelper=false) {
+		int id = GUIUtility.GetControlID (s_Slider2DHash, FocusType.Keyboard);
+		return UnityEditorInternal.Slider2D.Do(id, handlePos, new Vector3(0, 0, 0), handleDir, slideDir1, slideDir2, handleSize, drawFunc, snap, drawHelper);
+	}
+
+	/// *listonly*
+	CSRAW public static Vector3 Slider2D (int id, Vector3 handlePos, Vector3 handleDir, Vector3 slideDir1, Vector3 slideDir2,  float handleSize, DrawCapFunction drawFunc, Vector2 snap, bool drawHelper=false) {
+		return UnityEditorInternal.Slider2D.Do(id, handlePos, new Vector3(0, 0, 0), handleDir, slideDir1, slideDir2, handleSize, drawFunc, snap, drawHelper);
+	}
+
+	/// *listonly*
+	CSRAW public static Vector3 Slider2D (Vector3 handlePos, Vector3 handleDir, Vector3 slideDir1, Vector3 slideDir2, float handleSize, DrawCapFunction drawFunc, float snap, bool drawHelper=false) {	
+		int id = GUIUtility.GetControlID (s_Slider2DHash, FocusType.Keyboard);
+		return Slider2D (id, handlePos, new Vector3(0, 0, 0), handleDir, slideDir1, slideDir2, handleSize, drawFunc, new Vector2(snap,snap), drawHelper);
+	}
+
+		
+	// Make an unconstrained rotation handle.
+	CSRAW public static Quaternion FreeRotateHandle (Quaternion rotation, Vector3 position, float size) {
+		int id = GUIUtility.GetControlID (s_FreeRotateHandleHash, FocusType.Keyboard);
+		return UnityEditorInternal.FreeRotate.Do(id, rotation, position, size);
+	}
+
+
+	// Make an unconstrained movement handle. 
+	CSRAW public static Vector3 FreeMoveHandle (Vector3 position, Quaternion rotation, float size, Vector3 snap, DrawCapFunction capFunc) {
+		int id = GUIUtility.GetControlID (s_FreeMoveHandleHash, FocusType.Keyboard);
+		return UnityEditorInternal.FreeMove.Do(id, position, rotation, size, snap, capFunc);
+	}
+
+	// Make a directional scale slider
+	CSRAW public static float ScaleSlider (float scale, Vector3 position, Vector3 direction, Quaternion rotation, float size, float snap) {
+		int id = GUIUtility.GetControlID (s_ScaleSliderHash, FocusType.Keyboard);
+		return UnityEditorInternal.SliderScale.DoAxis(id, scale, position, direction, rotation, size, snap);	
+	}
+
+	
+	// Make a single-float draggable handle. 
+	CSRAW public static float ScaleValueHandle (float value, Vector3 position, Quaternion rotation, float size, DrawCapFunction capFunc, float snap) {
+		int id = GUIUtility.GetControlID (s_ScaleValueHandleHash, FocusType.Keyboard);
+		return UnityEditorInternal.SliderScale.DoCenter(id, value, position, rotation, size, capFunc, snap);
+	}
+
+	// Make a 3D disc that can be dragged with the mouse
+	CSRAW public static Quaternion Disc (Quaternion rotation, Vector3 position, Vector3 axis, float size, bool cutoffPlane, float snap) {
+		int id = GUIUtility.GetControlID (s_DiscHash, FocusType.Keyboard);
+		return UnityEditorInternal.Disc.Do (id, rotation, position, axis, size, cutoffPlane, snap);
+	}
+
+	// Make a 3D Button.
+	CSRAW public static bool Button (Vector3 position, Quaternion direction, float size, float pickSize, DrawCapFunction capFunc) {
+		int id = GUIUtility.GetControlID (s_ButtonHash, FocusType.Passive);
+		return UnityEditorInternal.Button.Do (id, position, direction, size, pickSize, capFunc);
+	}		
+	
+	
+	CSRAW internal static void SetupIgnoreRaySnapObjects ()
+	{
+		HandleUtility.ignoreRaySnapObjects = Selection.GetTransforms(SelectionMode.Editable | SelectionMode.Deep);
+	}
+
+	//rounds the value ''val'' to the closest multiple of ''snap'' (snap can only be posiive)
+	CSRAW public static float SnapValue (float val, float snap) 
+	{
+		if (EditorGUI.actionKey && snap > 0) {
+			return Mathf.Round (val / snap) * snap;
+		}
+		return val;
+	}
+
+		
+	
+	
+	
+	CUSTOM static private void Internal_DrawCameraWithGrid (Camera cam, int renderMode, ref DrawGridParameters gridParam) {
+		cam->RenderEditorCamera (static_cast<Camera::EditorDrawingMode>(renderMode), &gridParam);
+	}
+	CUSTOM static private void Internal_DrawCamera (Camera cam, int renderMode) {
+		cam->RenderEditorCamera (static_cast<Camera::EditorDrawingMode>(renderMode), 0);
+	}
+	CUSTOM static private void Internal_FinishDrawingCamera (Camera cam) {
+		cam->FinishRenderingEditorCamera ();
+	}
+	CUSTOM static private void Internal_ClearCamera (Camera cam) {
+		cam->ClearEditorCamera ();
+	}
+	
+	CUSTOM static internal void Internal_SetCurrentCamera (Camera cam) {
+		GetRenderManager().SetCurrentCamera (cam);
+	}
+	
+	CUSTOM static internal void SetSceneViewColors (Color wire, Color wireOverlay, Color active, Color selected) {
+		g_EditorCameraWireframeColor = wire;
+		g_EditorCameraOverlayColor = wireOverlay;
+		g_EditorCameraActiveColor = active;
+		g_EditorCameraOtherSelectedColor = selected;
+	}
+	
+	CUSTOM static internal void EnableCameraFx (Camera cam, bool fx) {
+		cam->GetComponent(HaloLayer).SetEnabled (fx);
+		cam->GetComponent(FlareLayer).SetEnabled (fx);
+		cam->SetClearFlags (fx ? (Camera::kSkybox) : (Camera::kSolidColor));
+	}
+	
+	CUSTOM static internal void EnableCameraFlares (Camera cam, bool flares) {
+		cam->GetComponent(HaloLayer).SetEnabled (flares);
+		cam->GetComponent(FlareLayer).SetEnabled (flares);
+	}
+	
+	CUSTOM static internal void EnableCameraSkybox (Camera cam, bool skybox) {
+		cam->SetClearFlags (skybox ? (Camera::kSkybox) : (Camera::kSolidColor));
+	}
+
+	CUSTOM static internal void SetCameraOnlyDrawMesh (Camera cam) {
+		cam->SetOnlyRenderIntermediateObjects();
+	}
+	
+	// Setup viewport and stuff for a current camera.
+	CUSTOM static private void Internal_SetupCamera (Camera cam) {
+		GetRenderManager().SetCurrentCamera (cam);
+		// Do not setup render texture. Only setup camera; we don't want
+		// render texture to be set just because something uses a GrabPass.
+		// Instead, just set viewport manually.
+		cam->SetupRender ();
+		
+		Rectf pixelRect = cam->GetScreenViewportRect();
+		int viewport[4];
+		viewport[0] = RoundfToInt( pixelRect.x );
+		viewport[1] = RoundfToInt( pixelRect.y );
+		viewport[2] = RoundfToInt( pixelRect.Width() );
+		viewport[3] = RoundfToInt( pixelRect.Height() );
+		FlipScreenRectIfNeeded( GetGfxDevice(), viewport );
+		GetGfxDevice().SetViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
+	}
+
+	// The camera used for deciding where 3D handles end up
+	CSRAW public Camera currentCamera { get { return Camera.current; } set { Internal_SetCurrentCamera (value); } }
+
+	
+	CSRAW internal static Color realHandleColor { get { return s_Color * new Color (1, 1, 1, .5f) + (s_Lighting ? new Color (0,0,0,.5f) : new Color (0,0,0,0)); } }
+
+
+	// Draw two-shaded wire-disc that is fully shadowed
+	internal static void DrawTwoShadedWireDisc (Vector3 position, Vector3 axis, float radius)
+	{
+		Color col = Handles.color;
+		Color origCol = col;
+		col.a *= backfaceAlphaMultiplier;
+		Handles.color = col;
+		Handles.DrawWireDisc (position, axis, radius);
+		Handles.color = origCol;
+	}
+	
+	// Draw two-shaded wire-disc with from and degrees specifying the lit part and the rest being shadowed
+	internal static void DrawTwoShadedWireDisc (Vector3 position, Vector3 axis, Vector3 from, float degrees, float radius)
+	{
+		Handles.DrawWireArc (position, axis, from, degrees, radius);
+		Color col = Handles.color;
+		Color origCol = col;
+		col.a *= backfaceAlphaMultiplier;
+		Handles.color = col;
+		Handles.DrawWireArc (position, axis, from, degrees - 360, radius);
+		Handles.color = origCol;
+	}
+
+	
+	// Sets up matrix
+	CSRAW internal static Matrix4x4 StartCapDraw (Vector3 position, Quaternion rotation, float size) {
+		Shader.SetGlobalColor ("_HandleColor", realHandleColor);
+		Shader.SetGlobalFloat ("_HandleSize", size);
+		Matrix4x4 mat = matrix * Matrix4x4.TRS (position, rotation, Vector3.one);
+		Shader.SetGlobalMatrix ("_ObjectToWorld", mat);
+		HandleUtility.handleMaterial.SetPass (0);
+		return mat;
+	}
+	
+	// Draw a cube. Pass this into handle functions.
+	CSRAW public static void CubeCap (int controlID, Vector3 position, Quaternion rotation, float size) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		Graphics.DrawMeshNow (s_CubeMesh, StartCapDraw (position, rotation, size));
+	}
+
+	// Draw a Sphere. Pass this into handle functions.
+	CSRAW public static void SphereCap (int controlID, Vector3 position, Quaternion rotation, float size) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		Graphics.DrawMeshNow (s_SphereMesh, StartCapDraw (position, rotation, size));		
+	}
+	
+	// Draw a Cone. Pass this into handle functions.
+	CSRAW public static void ConeCap (int controlID, Vector3 position, Quaternion rotation, float size) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		Graphics.DrawMeshNow (s_ConeMesh, StartCapDraw (position, rotation, size));
+	}
+
+	// Draw a Cylinder. Pass this into handle functions.
+	CSRAW public static void CylinderCap (int controlID, Vector3 position, Quaternion rotation, float size) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		Graphics.DrawMeshNow (s_CylinderMesh, StartCapDraw (position, rotation, size));
+	}
+
+	// Draw a camera-facing Rectangle. Pass this into handle functions.
+	static Vector3[] s_RectangleCapPointsCache = new Vector3[5];
+	CSRAW public static void RectangleCap (int controlID, Vector3 position, Quaternion rotation, float size)
+	{
+		RectangleCap(controlID, position, rotation, new Vector2(size, size));
+	}
+
+	CSRAW internal static void RectangleCap (int controlID, Vector3 position, Quaternion rotation, Vector2 size)
+	{
+		if (Event.current.type != EventType.repaint)
+			return;
+		Vector3 sideways = rotation * new Vector3 (size.x, 0, 0);
+		Vector3 up = rotation * new Vector3 (0, size.y, 0);
+		s_RectangleCapPointsCache[0] = position + sideways + up;
+		s_RectangleCapPointsCache[1] = position + sideways - up;
+		s_RectangleCapPointsCache[2] = position - sideways - up;
+		s_RectangleCapPointsCache[3] = position - sideways + up;
+		s_RectangleCapPointsCache[4] = position + sideways + up;
+		Handles.DrawPolyLine (s_RectangleCapPointsCache);
+	}
+	
+	// Draw a camera facing selection frame.
+	CSRAW public static void SelectionFrame (int controlID, Vector3 position, Quaternion rotation, float size)
+	{
+		if (Event.current.type != EventType.repaint)
+			return;
+		Handles.StartCapDraw (position, rotation, size);
+		Vector3 sideways = rotation * new Vector3 (size, 0, 0);
+		Vector3 up = rotation * new Vector3 (0, size, 0);
+		
+		var point1 = position - sideways + up;
+		var point2 = position + sideways + up;
+		var point3 = position + sideways - up;
+		var point4 = position - sideways - up;
+		
+		Handles.DrawLine(point1, point2);
+		Handles.DrawLine(point2, point3);
+		Handles.DrawLine(point3, point4);
+		Handles.DrawLine(point4, point1);
+	}
+
+	// Draw a camera-facing dot. Pass this into handle functions.
+	CSRAW public static void DotCap (int controlID, Vector3 position,  Quaternion rotation, float size) {
+		if (Event.current.type != EventType.repaint)
+			return;
+			
+		// Only apply matrix to the position because DotCap is camera facing
+		position = matrix.MultiplyPoint (position);
+		
+		Vector3 sideways = Camera.current.transform.right * size;
+		Vector3 up = Camera.current.transform.up * size;
+				
+		Color col = s_Color * new Color (1, 1, 1, 0.99f);
+		HandleUtility.handleWireMaterial.SetPass (0);
+		GL.Begin (GL.QUADS);
+		GL.Color (col);
+		GL.Vertex (position + sideways + up);
+		GL.Vertex (position + sideways - up);
+		GL.Vertex (position - sideways - up);
+		GL.Vertex (position - sideways + up);
+		GL.End ();
+	}
+	
+	// Draw a camera-facing Circle. Pass this into handle functions.
+	CSRAW public static void CircleCap (int controlID, Vector3 position, Quaternion rotation, float size) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		StartCapDraw (position, rotation, size);
+		Vector3 forward = rotation * new Vector3 (0, 0, 1);
+		Handles.DrawWireDisc(position, forward, size);
+	}
+
+	// Draw an arrow like those used by the move tool.
+	CSRAW public static void ArrowCap (int controlID, Vector3 position, Quaternion rotation, float size) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		Vector3 direction = rotation * Vector3.forward;
+		ConeCap (controlID, position + direction * size, Quaternion.LookRotation (direction), size * .2f);
+		Handles.DrawLine (position, position + direction * size * .9f);
+	}
+
+
+	OBSOLETE warning DrawCylinder has been renamed to CylinderCap.
+	CSRAW public static void DrawCylinder (int controlID, Vector3 position, Quaternion rotation, float size) 
+		{ CylinderCap (controlID, position, rotation, size); }
+
+	OBSOLETE warning DrawSphere has been renamed to SphereCap.
+	CSRAW public static void DrawSphere (int controlID, Vector3 position, Quaternion rotation, float size) 
+		{ SphereCap (controlID, position, rotation, size); }
+
+	OBSOLETE warning DrawRectangle has been renamed to RectangleCap.
+	CSRAW public static void DrawRectangle (int controlID, Vector3 position, Quaternion rotation, float size)
+		{ RectangleCap (controlID, position, rotation, size); }
+
+
+	OBSOLETE warning DrawCube has been renamed to CubeCap.
+	CSRAW public static void DrawCube (int controlID, Vector3 position, Quaternion rotation, float size) 
+		{ CubeCap (controlID, position, rotation, size); }
+	
+	OBSOLETE warning DrawArrow has been renamed to ArrowCap.
+	CSRAW public static void DrawArrow (int controlID, Vector3 position, Quaternion rotation, float size)
+		{ ArrowCap (controlID, position, rotation, size); }
+
+	OBSOLETE warning DrawCone has been renamed to ConeCap.
+	CSRAW public static void DrawCone (int controlID, Vector3 position, Quaternion rotation, float size)
+		{ ConeCap (controlID, position, rotation, size); }	
+	
+	// Draw a line from __p1__ to __p2__.
+	CSRAW public static void DrawLine (Vector3 p1, Vector3 p2) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		
+		Color col = s_Color * new Color (1, 1, 1, 0.75f);
+		HandleUtility.handleWireMaterial.SetPass (0);
+		GL.PushMatrix ();
+		GL.MultMatrix (matrix);
+		GL.Begin (GL.LINES);
+		GL.Color (col);
+		GL.Vertex (p1);
+		GL.Vertex (p2);
+		GL.End ();
+		GL.PopMatrix ();
+	}
+	
+	// Draw a line going through the list of all /points/.
+	CSRAW public static void DrawPolyLine (params Vector3[] points) {
+		if (Event.current.type != EventType.repaint)
+			return;
+
+		Color col = s_Color * new Color (1, 1, 1, 0.75f);
+		HandleUtility.handleWireMaterial.SetPass (0);
+		GL.PushMatrix ();
+		GL.MultMatrix (matrix);
+		GL.Begin (GL.LINES);
+		GL.Color (col);
+		for (int i = 1; i < points.Length; i++) {
+			GL.Vertex (points[i]);
+			GL.Vertex (points[i-1]);
+		}
+		GL.End ();
+		GL.PopMatrix ();
+	}
+
+	CSRAW internal static void DrawAAPolyLine (Color[] colors, Vector3[] points)			    { DoDrawAAPolyLine (colors, points, -1, null, 2, 0.75f); }
+	CSRAW internal static void DrawAAPolyLine (float width, Color[] colors, Vector3[] points)	{ DoDrawAAPolyLine (colors, points, -1, null, width, 0.75f); }
+	/// *listonly*
+	CSRAW public static void DrawAAPolyLine (params Vector3[] points)						{ DoDrawAAPolyLine (null, points, -1, null, 2, 0.75f); }
+	/// *listonly*
+	CSRAW public static void DrawAAPolyLine (float width, params Vector3[] points)			{ DoDrawAAPolyLine (null, points, -1, null, width, 0.75f); }
+	/// *listonly*
+	CSRAW public static void DrawAAPolyLine (Texture2D lineTex, params Vector3[] points)	{ DoDrawAAPolyLine (null, points, -1, lineTex, lineTex.height / 2, 0.99f); }
+	/// *listonly*
+	CSRAW public static void DrawAAPolyLine (float width, int actualNumberOfPoints, params Vector3[] points) { DoDrawAAPolyLine (null, points, actualNumberOfPoints, null, width, 0.75f); }
+
+	// Draw anti-aliased line specified with point array and width.
+	CSRAW public static void DrawAAPolyLine (Texture2D lineTex, float width, params Vector3[] points) {  DoDrawAAPolyLine (null, points, -1, lineTex, width, 0.99f); }
+
+	
+	CSRAW private static void DoDrawAAPolyLine (Color[] colors, Vector3[] points, int actualNumberOfPoints, Texture2D lineTex, float width, float alpha)
+	{
+		if (Event.current.type != EventType.repaint)
+			return;
+		HandleUtility.handleWireMaterial.SetPass (0); 
+		
+		Color defaultColor = new Color (1, 1, 1, alpha); 
+		
+		if (colors != null)
+		{
+			for (int i = 0; i < colors.Length; i++)
+				colors[i] *= defaultColor;
+		}
+		else
+			defaultColor *= s_Color; 
+		GL.PushMatrix ();
+		GL.MultMatrix (matrix);
+		Internal_DrawAAPolyLine (colors, points, defaultColor, actualNumberOfPoints, lineTex, width);
+		GL.PopMatrix ();
+	}
+	
+	CUSTOM static private void Internal_DrawAAPolyLine (Color[] colors, Vector3[] points, Color defaultColor, int actualNumberOfPoints, Texture2D texture, float width)
+	{
+		int length = mono_array_length_safe(points) ;
+		if (actualNumberOfPoints >= 0 && actualNumberOfPoints < length)
+			length = actualNumberOfPoints;
+		if (colors == NULL)
+		{
+			 DrawAAPolyLine (length, &GetMonoArrayElement<Vector3f>(points, 0), NULL, defaultColor, texture, width);
+		}
+		else
+		{
+			int colorLength = mono_array_length_safe(colors);
+			if (length != colorLength)
+			{
+				ErrorString("Number of colors and number of points must be the same.");
+				return;
+			}
+			DrawAAPolyLine (length, &GetMonoArrayElement<Vector3f>(points, 0), &GetMonoArrayElement<ColorRGBAf>(colors, 0), defaultColor, texture, width);
+		}
+	}
+
+	// Draw textured bezier line through start and end points with the given tangents.  To get an anti-aliased effect use a texture that is 1x2 pixels with one transparent white pixel and one opaque white pixel.  The bezier curve will be swept using this texture.
+	CSRAW public static void DrawBezier (Vector3 startPosition, Vector3 endPosition, Vector3 startTangent, Vector3 endTangent, Color color, Texture2D texture, float width) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		HandleUtility.handleWireMaterial.SetPass (0);
+		GL.PushMatrix ();
+		GL.MultMatrix (matrix);
+		Internal_DrawBezier (startPosition, endPosition, startTangent, endTangent, color, texture, width);
+		GL.PopMatrix ();
+	}
+
+	CUSTOM static private void Internal_DrawBezier (Vector3 startPosition, Vector3 endPosition, Vector3 startTangent, Vector3 endTangent, Color color, Texture2D texture, float width)
+	{
+		DrawBezier (startPosition, endPosition, startTangent, endTangent, color, texture, width);
+	}
+		
+	// Draw the outline of a flat disc in 3D space.
+	CSRAW public static void DrawWireDisc (Vector3 center, Vector3 normal, float radius) {
+		Vector3 tangent = Vector3.Cross (normal, Vector3.up);
+		if (tangent.sqrMagnitude < .001f)
+			tangent = Vector3.Cross (normal, Vector3.right);
+		DrawWireArc (center, normal, tangent, 360, radius);
+	}	
+	
+	// Draw a circular arc in 3D space.
+	CSRAW public static void DrawWireArc (Vector3 center, Vector3 normal, Vector3 from, float angle, float radius) {
+		Vector3[] points = new Vector3[60];
+		SetDiscSectionPoints (points, 60, center, normal, from, angle, radius);
+		Handles.DrawPolyLine (points);
+	}
+
+	// Draw a solid outlined rectangle in 3D space.
+	CSRAW public static void DrawSolidRectangleWithOutline (Vector3[] verts, Color faceColor, Color outlineColor) {
+		if (Event.current.type != EventType.repaint)
+			return;
+
+		HandleUtility.handleWireMaterial.SetPass (0);
+		
+		GL.PushMatrix ();
+		GL.MultMatrix (matrix);
+		
+		// Triangles (Draw it twice to ensure render of both front and back faces)
+		if (faceColor.a > 0)
+		{
+			Color col = faceColor * color;
+			GL.Begin (GL.TRIANGLES);
+			for (int i = 0; i < 2; i++) {
+				GL.Color (col);
+				GL.Vertex (verts[i*2 + 0]);
+				GL.Vertex (verts[i*2 + 1]);
+				GL.Vertex (verts[(i*2 + 2)%4]);
+
+				GL.Vertex (verts[i*2 + 0]);
+				GL.Vertex (verts[(i*2 + 2)%4]);
+				GL.Vertex (verts[i*2 + 1]);
+			} 	
+			GL.End ();
+		}
+		
+		// Outline
+		if (outlineColor.a > 0)
+		{
+			//HandleUtility.handleWireMaterial.SetPass (0);
+			Color col = outlineColor * color;
+			GL.Begin (GL.LINES);
+			GL.Color (col);
+			for (int i = 0; i < 4; i++) {
+				GL.Vertex (verts[i]);
+				GL.Vertex (verts[(i+1)%4]);
+			}
+			GL.End ();		
+		}
+		
+		GL.PopMatrix ();
+	}
+	
+	// Draw a solid flat disc in 3D space.
+	CSRAW public static void DrawSolidDisc (Vector3 center, Vector3 normal, float radius) {
+		Vector3 tangent = Vector3.Cross (normal, Vector3.up);
+		if (tangent.sqrMagnitude < .001f) 
+			tangent = Vector3.Cross (normal, Vector3.right);
+		DrawSolidArc (center, normal, tangent, 360, radius);
+	}	
+	
+	// Draw a circular sector (pie piece) in 3D space.
+	CSRAW public static void DrawSolidArc (Vector3 center, Vector3 normal, Vector3 from, float angle, float radius) {
+		if (Event.current.type != EventType.repaint)
+			return;
+		Vector3[] points = new Vector3[60];
+		SetDiscSectionPoints (points, 60, center, normal, from, angle, radius);
+
+		Shader.SetGlobalColor ("_HandleColor", color * new Color (1, 1, 1, .5f));
+		Shader.SetGlobalFloat ("_HandleSize", 1);
+			
+		HandleUtility.handleWireMaterial.SetPass (0);
+		
+		// Draw it twice to ensure we don't get fckd by backface culling
+		GL.PushMatrix ();
+		GL.MultMatrix (matrix);
+		GL.Begin (GL.TRIANGLES);
+		for (int i = 1; i < points.Length; i++) {
+			GL.Color (color);
+			GL.Vertex (center);
+			GL.Vertex (points[i - 1]);
+			GL.Vertex (points[i]);
+			GL.Vertex (center);
+			GL.Vertex (points[i]);
+			GL.Vertex (points[i - 1]);
+		} 
+		GL.End ();
+		GL.PopMatrix ();
+	}
+
+	CSRAW internal static void SetDiscSectionPoints (Vector3[] dest, int count, Vector3 center, Vector3 normal, Vector3 from, float angle, float radius) {
+		from.Normalize ();
+		Quaternion r = Quaternion.AngleAxis (angle / (count - 1), normal);
+		Vector3 tangent = from * radius;
+		for (int i = 0; i < count; i++) {
+			dest[i] = center + tangent;
+			tangent = r * tangent;	
+		}
+	}
+	
+	internal static Mesh s_CubeMesh, s_SphereMesh, s_ConeMesh, s_CylinderMesh, s_QuadMesh;
+	internal static void Init () {
+		if (!s_CubeMesh) {
+			GameObject handleGo = (GameObject)EditorGUIUtility.Load ("SceneView/HandlesGO.fbx");
+			if (!handleGo) {
+				Debug.Log ("ARGH - We couldn't find SceneView/HandlesGO.fbx");
+			}
+			// @TODO: temp workaround to make it not render in the scene
+			handleGo.SetActive (false);
+			foreach (Transform t in handleGo.transform) {
+				switch (t.name) {
+				case "Cube":
+					s_CubeMesh = ((MeshFilter)t.GetComponent ("MeshFilter")).sharedMesh;	
+					break;
+				case "Sphere":
+					s_SphereMesh = ((MeshFilter)t.GetComponent ("MeshFilter")).sharedMesh;
+					break;
+				case "Cone":
+					s_ConeMesh = ((MeshFilter)t.GetComponent ("MeshFilter")).sharedMesh;
+					break;
+				case "Cylinder":
+					s_CylinderMesh = ((MeshFilter)t.GetComponent ("MeshFilter")).sharedMesh;
+					break;
+				case "Quad":
+					s_QuadMesh = ((MeshFilter)t.GetComponent ("MeshFilter")).sharedMesh;
+					break;
+				}
+			}
+			if (Application.platform == RuntimePlatform.WindowsEditor)
+			{
+				/*
+				We have the Lucida Grande ttf asset which was always the font we used in the editor.
+				But on windows we call ReplaceFontForWindows to override the font used for that asset.
+				It would probably make sense to rename the asset to something generic, such as "EditorFont" instead,
+				though that might possibly break some things.
+				*/
+				ReplaceFontForWindows ((Font)EditorGUIUtility.LoadRequired (EditorResourcesUtility.fontsPath + "Lucida Grande.ttf"));
+				ReplaceFontForWindows ((Font)EditorGUIUtility.LoadRequired (EditorResourcesUtility.fontsPath + "Lucida Grande Bold.ttf"));
+				ReplaceFontForWindows ((Font)EditorGUIUtility.LoadRequired (EditorResourcesUtility.fontsPath + "Lucida Grande Small.ttf"));
+				ReplaceFontForWindows ((Font)EditorGUIUtility.LoadRequired (EditorResourcesUtility.fontsPath + "Lucida Grande Small Bold.ttf"));
+				ReplaceFontForWindows ((Font)EditorGUIUtility.LoadRequired (EditorResourcesUtility.fontsPath + "Lucida Grande Big.ttf"));
+			}
+		}
+	}
+	
+	static void ReplaceFontForWindows (Font font)
+	{
+		if (font.name.Contains("Bold") ) 
+			font.fontNames = new string[] { "Verdana Bold", "Tahoma Bold" }; 
+		else 
+			font.fontNames = new string[] { "Verdana", "Tahoma" };
+		// Avoid the font to be unloaded in EditorUtility.UnloadUnusedAssetsIgnoreManagedReferences and lose the font name information.
+		font.hideFlags = HideFlags.HideAndDontSave;
+	}
+	
+	/// *listonly*
+	CSRAW public static void Label (Vector3 position, string text)							{ Label (position, EditorGUIUtility.TempContent (text), GUI.skin.label); }
+	/// *listonly*
+	CSRAW public static void Label (Vector3 position, Texture image)						{ Label (position, EditorGUIUtility.TempContent (image), GUI.skin.label); }
+	/// *listonly*
+	CSRAW public static void Label (Vector3 position, GUIContent content)					{ Label (position, content, GUI.skin.label); }
+	/// *listonly*
+	CSRAW public static void Label (Vector3 position, string text, GUIStyle style)				{ Label (position, EditorGUIUtility.TempContent (text), style); }
+	// Make a text label positioned in 3D space.
+	CSRAW public static void Label (Vector3 position, GUIContent content, GUIStyle style) {
+		Handles.BeginGUI ();
+		GUI.Label (HandleUtility.WorldPointToSizedRect (position, content, style), content, style);
+		Handles.EndGUI();		
+	}
+	
+	// Returns actual rectangle where the camera will be rendered
+	CSRAW internal static Rect GetCameraRect (Rect position) {
+		Rect screenRect = GUIClip.Unclip (position);
+		Rect cameraRect = new Rect (screenRect.xMin, Screen.height - screenRect.yMax, screenRect.width, screenRect.height);	
+		return cameraRect;
+	}
+
+	// Clears the camera.
+	CSRAW public static void ClearCamera (Rect position, Camera camera)
+	{
+		Event evt = Event.current;
+		if (camera.targetTexture == null)
+		{
+			Rect screenRect = GUIClip.Unclip (position);
+			Rect cameraRect = new Rect (screenRect.xMin, Screen.height - screenRect.yMax, screenRect.width, screenRect.height);
+			camera.pixelRect = cameraRect;
+		}
+		else
+		{
+			camera.rect = new Rect(0,0,1,1);
+		}	
+		if (evt.type == EventType.repaint)
+			Internal_ClearCamera (camera);
+		else
+			Internal_SetCurrentCamera (camera);
+	}
+	
+	CSRAW internal static void DrawCameraImpl ( Rect position, Camera camera, 
+	                                            DrawCameraMode drawMode, bool drawGrid, DrawGridParameters gridParam, bool finish
+                                              )
+	{
+	    Event evt = Event.current;
+		
+		if (evt.type == EventType.repaint) 
+		{
+			if (camera.targetTexture == null)
+			{
+				Rect screenRect = GUIClip.Unclip (position);
+				camera.pixelRect = new Rect (screenRect.xMin, Screen.height - screenRect.yMax, screenRect.width, screenRect.height);
+			}
+			else
+			{
+				camera.rect = new Rect (0,0,1,1);
+			}
+			if (drawMode == DrawCameraMode.Normal) 
+			{
+				RenderTexture temp = camera.targetTexture;
+				camera.targetTexture = RenderTexture.active;
+				camera.Render ();
+				camera.targetTexture = temp;
+			} else {
+			    if( drawGrid )
+                    Internal_DrawCameraWithGrid (camera, (int)drawMode, ref gridParam);
+			    else
+                    Internal_DrawCamera (camera, (int)drawMode);
+				if (finish)
+					Internal_FinishDrawingCamera (camera);
+			}
+		}
+		else
+			Internal_SetCurrentCamera (camera);
+	}
+
+	// Draws a camera inside a rectangle.
+	// It also sets up the (for now, anyways) undocumented Event.current.mouseRay and Event.current.lastMouseRay for handleutility functions.
+	//
+	CSRAW internal static void DrawCamera (  Rect position, Camera camera, DrawCameraMode drawMode, DrawGridParameters gridParam )
+	{	
+		DrawCameraImpl( position, camera, drawMode, true, gridParam, true );
+	}
+
+	CSRAW internal static void DrawCameraStep1 (  Rect position, Camera camera, DrawCameraMode drawMode, DrawGridParameters gridParam )
+	{	
+		DrawCameraImpl( position, camera, drawMode, true, gridParam, false );
+	}
+
+	CSRAW internal static void DrawCameraStep2 (  Camera camera, DrawCameraMode drawMode )
+	{	
+		if (Event.current.type == EventType.repaint && drawMode != DrawCameraMode.Normal) 
+			Internal_FinishDrawingCamera (camera);
+	}
+	
+	// Draws a camera inside a rectangle.
+	// It also sets up the (for now, anyways) undocumented Event.current.mouseRay and Event.current.lastMouseRay for handleutility functions.
+	//
+	CSRAW public static void DrawCamera (  Rect position, Camera camera, DrawCameraMode drawMode=DrawCameraMode.Normal )
+	{
+	    DrawGridParameters nullGridParam = new DrawGridParameters();
+	    DrawCameraImpl( position, camera, drawMode, false, nullGridParam, true );
+	}
+	
+	CSRAW internal enum FilterMode {
+		Off = 0,
+		ShowFiltered = 1,
+		ShowRest = 2
+	}
+	
+	CUSTOM internal static void SetCameraFilterMode (Camera camera, FilterMode mode)
+	{
+		camera->SetFilterMode (mode);
+	}
+	
+	CUSTOM internal static FilterMode GetCameraFilterMode (Camera camera)
+	{
+		return camera->GetFilterMode ();
+	}
+
+	CUSTOM internal static void DrawCameraFade (Camera camera, float fade) {
+		camera->RenderEditorCameraFade (fade);
+	}
+	
+	/// *listonly*
+	CSRAW public static void SetCamera (Camera camera) {
+		if (Event.current.type == EventType.repaint)
+			Internal_SetupCamera (camera);
+		else
+			Internal_SetCurrentCamera (camera);
+	}
+
+	// Set the current camera so all Handles and Gizmos are draw with its settings.
+	CSRAW public static void SetCamera (Rect position, Camera camera) {
+		Rect screenRect = GUIClip.Unclip (position);
+
+		Event evt = Event.current;
+
+		Rect cameraRect = new Rect (screenRect.xMin, Screen.height - screenRect.yMax, screenRect.width, screenRect.height);
+		camera.pixelRect = cameraRect;
+
+		if (evt.type == EventType.repaint)
+			Internal_SetupCamera (camera);
+		else
+			Internal_SetCurrentCamera (camera);
+	}
+
+	///*listonly*
+	CSRAW public static void BeginGUI () {
+		if (Camera.current && Event.current.type == EventType.repaint)
+		{
+			GUIClip.Reapply ();
+		}
+	}
+	
+	// Begin a 2D GUI block inside the 3D handle GUI.
+	OBSOLETE warning Please use BeginGUI() with GUILayout.BeginArea(position) / GUILayout.EndArea()
+	CSRAW public static void BeginGUI (Rect position) {
+		GUILayout.BeginArea (position);
+	}
+	
+	// End a 2D GUI block and get back to the 3D handle GUI.
+	CSRAW public static void EndGUI () { 
+		Camera cam = Camera.current;
+		if (cam && Event.current.type == EventType.repaint)
+			Internal_SetupCamera (cam);
+	}
+
+	// Label Static in Playmode
+	CSRAW internal static void ShowStaticLabelIfNeeded(Vector3 pos)
+	{
+		if (!Tools.s_Hidden && EditorApplication.isPlaying && GameObjectUtility.ContainsStatic(Selection.gameObjects))
+		{
+			Handles.color = Color.white;
+			GUIStyle style = "SC ViewAxisLabel";
+			style.alignment = TextAnchor.MiddleLeft;
+			style.fixedWidth = 0;
+			Handles.BeginGUI ();
+			Rect rect = HandleUtility.WorldPointToSizedRect (pos, EditorGUIUtility.TempContent ("Static"), style);
+			rect.x += 10;
+			rect.y += 10;
+			GUI.Label (rect, EditorGUIUtility.TempContent ("Static"), style);
+			Handles.EndGUI();	
+		}
+
+	}
+
+END
+
+CSRAW }

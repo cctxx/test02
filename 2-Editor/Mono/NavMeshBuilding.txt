@@ -1,0 +1,88 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/NavMesh/NavMeshBuilder.h"
+#include "Editor/Src/NavMesh/NavMeshVisualization.h"
+#include "Runtime/Mono/MonoBehaviour.h"
+#include "Runtime/Scripting/Scripting.h"
+
+using namespace std;
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Reflection;
+using System.Collections.Generic;
+using System.IO;
+using UnityScript.Scripting;
+using UnityEditor;
+
+namespace UnityEditor
+{
+//Navigation mesh builder interface.
+CLASS NavMeshBuilder
+
+	// Object containing settings for the Navmesh
+	//*undocumented*
+	CUSTOM_PROP static UnityEngine.Object navMeshSettingsObject
+	{
+		return Scripting::ScriptingWrapperFor(&GetNavMeshSettings());
+	}
+	
+	// Build the Navmesh.
+	CUSTOM static void BuildNavMesh ()
+	{
+		NavMeshBuilder::BuildNavMesh(GetNavMeshSettings().GetNavMeshBuildSettings());
+	}
+
+	// Build the Navmesh Asyncronously.
+	CUSTOM static void BuildNavMeshAsync ()
+	{
+		NavMeshBuilder::BuildNavMeshAsync(GetNavMeshSettings().GetNavMeshBuildSettings());
+	}
+
+	// Clear all Navmeshes.
+	CUSTOM static void ClearAllNavMeshes ()
+	{
+		NavMeshBuilder::ClearAllNavMeshes();
+	}
+
+	// Returns true if an asynchronous build is still running.
+	CUSTOM_PROP static bool isRunning
+	{
+		return NavMeshBuilder::IsBuildingNavMeshAsync();
+	}
+
+	// Cancel Navmesh construction.
+	CUSTOM static void Cancel ()
+	{
+		return NavMeshBuilder::Cancel();
+	}
+
+END
+
+CLASS internal NavMeshVisualizationSettings
+	
+	CUSTOM_PROP static bool showNavigation
+	{ return GetNavMeshVisualizationSettings().GetShowNavigation(); }
+	{ GetNavMeshVisualizationSettings().SetShowNavigation(value); }
+	
+	CUSTOM_PROP static bool showNavMesh
+	{ return GetNavMeshVisualizationSettings().GetShowNavMesh(); }
+	{ GetNavMeshVisualizationSettings().SetShowNavMesh(value); }
+	
+	CUSTOM_PROP static bool showHeightMesh
+	{ return GetNavMeshVisualizationSettings().GetShowHeightMesh(); }
+	{ GetNavMeshVisualizationSettings().SetShowHeightMesh(value); }
+	
+	CUSTOM_PROP static bool hasHeightMesh
+	{ return GetNavMeshVisualizationSettings().HasHeightMesh(); }
+
+END
+
+
+CSRAW }

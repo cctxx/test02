@@ -1,0 +1,29 @@
+CSRAW
+using System;
+namespace UnityEditor
+{
+
+// Static Editor Flags
+CSRAW [Flags]
+ENUM StaticEditorFlags
+	// Considered static for lightmapping.
+	LightmapStatic        = 1,
+	
+	// Considered static for occlusion.
+	OccluderStatic       = 2,
+
+	// Considered static for occlusion.
+	OccludeeStatic       = 16,
+	
+	// Consider for static batching.
+	BatchingStatic        = 4,
+	
+	// Considered static for navigation.
+	NavigationStatic      = 8,
+	
+	// Auto-generate OffMeshLink.
+	OffMeshLinkGeneration = 32
+	
+END
+
+CSRAW }

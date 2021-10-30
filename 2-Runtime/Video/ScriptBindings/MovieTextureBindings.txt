@@ -1,0 +1,92 @@
+C++RAW
+
+
+#include "UnityPrefix.h"
+#include "Configuration/UnityConfigure.h"
+#include "Runtime/Mono/MonoManager.h"
+#include "Runtime/Graphics/Transform.h"
+#include "Runtime/Utilities/PathNameUtility.h"
+#include "Runtime/Profiler/ProfilerHistory.h"
+#include "Runtime/Misc/PlayerSettings.h"
+#include "Runtime/Allocator/MemoryManager.h"
+#include "Runtime/Audio/AudioClip.h"
+#if ENABLE_AUDIO
+#include "Runtime/Audio/AudioSource.h"
+#include "Runtime/Audio/AudioListener.h"
+#include "Runtime/Audio/AudioManager.h"
+#include "Runtime/Audio/AudioReverbZone.h"
+#include "Runtime/Audio/AudioReverbFilter.h"
+#include "Runtime/Audio/AudioHighPassFilter.h"
+#include "Runtime/Audio/AudioLowPassFilter.h"
+#include "Runtime/Audio/AudioChorusFilter.h"
+#include "Runtime/Audio/AudioDistortionFilter.h"
+#include "Runtime/Audio/AudioEchoFilter.h"
+#endif
+#include "Runtime/Animation/Animation.h"
+#include "Runtime/Video/MovieTexture.h"
+
+using namespace Unity;
+
+/*
+   Mono defines a bool as either 1 or 2 bytes.
+   On windows a bool on the C++ side needs to be 2 bytes.
+   We use the typemap to map bool's to short's.
+   When using the C++ keyword and you want to export a bool value
+   to mono you have to use a short on the C++ side.
+*/
+
+
+void PauseEditor ();
+using namespace std;
+
+CSRAW
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngineInternal;
+
+namespace UnityEngine
+{
+
+
+// Movie Textures (Pro only) are textures onto which movies are played back.
+CONDITIONAL ENABLE_MOVIES
+CLASS MovieTexture : Texture
+
+	// Starts playing the movie.
+	AUTO void Play ();
+
+	// Stops playing the movie, and rewinds it to the beginning
+	AUTO void Stop ();
+
+	// Pauses playing the movie.
+	AUTO void Pause ();
+
+	// Returns the [[AudioClip]] belonging to the MovieTexture.
+
+	CONDITIONAL ENABLE_AUDIO
+	AUTO_PTR_PROP AudioClip audioClip GetMovieAudioClip
+
+	// Set this to true to make the movie loop.
+
+	AUTO_PROP bool loop GetLoop SetLoop
+
+	// Returns whether the movie is playing or not
+
+	AUTO_PROP bool isPlaying IsPlaying
+
+	// If the movie is downloading from a web site, this returns if enough data has been downloaded so playback should be able to start without interruptions.
+
+	AUTO_PROP bool isReadyToPlay ReadyToPlay
+
+	// The time, in seconds, that the movie takes to play back completely.
+	AUTO_PROP float duration GetMovieDuration
+
+END
+
+
+
+CSRAW }
+

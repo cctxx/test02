@@ -1,0 +1,2 @@
+void InitializeRendererAnimationBindingInterface ();
+void CleanupRendererAnimationBindingInterface ();

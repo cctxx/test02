@@ -1,0 +1,264 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#include "Editor/Src/Undo/UndoManager.h"
+#include "Editor/Src/Undo/Undo.h"
+#include "Editor/Src/Undo/PropertyDiffUndoRecorder.h"
+#include "Editor/Src/Undo/ObjectUndo.h"
+#include "Runtime/Utilities/InitializeAndCleanup.h"
+#include "Runtime/Graphics/Transform.h"
+#include "Runtime/Export/GameObjectExport.h"
+#include "Editor/Mono/MonoPropertyModification.h"
+
+using namespace std;
+
+CSRAW
+using System;
+using UnityEngine;
+using Object=UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+namespace UnityEditor
+{
+
+// Lets you register undo operations on specific objects you are about to perform changes on.
+CLASS Undo
+
+	CSRAW public static void RegisterCompleteObjectUndo (Object objectToUndo, string name)
+	{
+		Object[] objects = { objectToUndo };
+		RegisterCompleteObjectUndoMultiple(objectToUndo, objects, name, 0);
+	}
+
+	CSRAW public static void RegisterCompleteObjectUndo (Object[] objectsToUndo, string name)
+	{
+		if (objectsToUndo.Length > 0)
+			RegisterCompleteObjectUndoMultiple(objectsToUndo[0], objectsToUndo, name, 0);
+	}
+
+	CUSTOM private static void RegisterCompleteObjectUndoMultiple (Object identifier, Object[] objectsToUndo, string name, int namePriority)
+	{
+		vector<Object*> objects;
+		MonoObjectArrayToVector(objectsToUndo, objects);
+		RegisterUndo(identifier, &objects[0], objects.size(), name, namePriority);
+	}
+	
+	CUSTOM static void SetTransformParent (Transform transform, Transform newParent, string name)
+	{
+		SetTransformParentUndo(*transform, newParent, name);
+	}
+
+	// Register the state of a Unity Object so the user can later undo back to that state.
+	CUSTOM static void RegisterCreatedObjectUndo (Object objectToUndo, string name)
+	{
+		RegisterCreatedObjectUndo (objectToUndo, name);
+	}
+
+	CUSTOM static void DestroyObjectImmediate (Object objectToUndo)
+	{
+		DestroyObjectUndoable (objectToUndo);
+	}
+
+	CUSTOM static Component AddComponent (GameObject gameObject, Type type)
+	{
+		ObjectUndo* undo = PrepareAddComponentUndo (*gameObject);
+		ScriptingObjectPtr addedComponent = MonoAddComponentWithType (*gameObject, type);
+		PostAddComponentUndo (undo, *gameObject);
+		return addedComponent;
+	}
+
+	CSRAW public static T AddComponent<T>(GameObject gameObject) where T : Component 
+	{
+		return AddComponent(gameObject, typeof(T)) as T;
+	}
+
+	
+	CUSTOM static void RegisterFullObjectHierarchyUndo (Object objectToUndo)
+	{
+		RegisterFullObjectHierarchyUndo (objectToUndo);
+	}
+
+	CUSTOM static void RecordObject (Object objectToUndo, string name)
+	{
+		RecordUndoDiff(objectToUndo, name.AsUTF8());
+	}
+
+	CUSTOM static void RecordObjects (Object[] objectsToUndo, string name)
+	{
+		vector<Object*> objects;
+		MonoObjectArrayToVector(objectsToUndo, objects);
+	
+		RecordUndoDiff(&objects[0], objects.size(), name.AsUTF8());
+	}
+	
+	
+	CUSTOM static void ClearUndo (Object identifier)
+	{
+		GetUndoManager().ClearUndoIdentifier(identifier);
+	}
+
+	// Perform an Undo operation.
+	CUSTOM public static void PerformUndo ()
+	{
+		GetUndoManager().Undo ();
+	}
+
+	// Perform an Redo operation.
+	CUSTOM public static void PerformRedo ()
+	{
+		GetUndoManager().Redo ();
+	}
+
+	// *undocumented*
+	CUSTOM public static void IncrementCurrentGroup ()
+	{
+		GetUndoManager().IncrementCurrentGroup ();
+	}
+
+	CUSTOM public static int GetCurrentGroup ()
+	{
+		return GetUndoManager().GetCurrentGroup ();
+	}
+
+	CUSTOM static void RevertAllInCurrentGroup ()
+	{
+		GetUndoManager().RevertAllInCurrentGroup ();
+	}
+
+	CUSTOM static void RevertAllDownToGroup (int group)
+	{
+		GetUndoManager().RevertAllDownToGroup (group);
+	}
+
+	CUSTOM static void CollapseUndoOperations (int groupIndex)
+	{
+		GetUndoManager().CollapseUndoOperations (groupIndex);
+	}
+
+
+	OBSOLETE warning Use Undo.RecordObject instead
+	CSRAW public static void RegisterUndo (Object objectToUndo, string name)
+	{
+		RegisterCompleteObjectUndo (objectToUndo, name);
+	}
+
+	OBSOLETE warning Use Undo.RecordObjects instead
+	CSRAW public static void RegisterUndo (Object[] objectsToUndo, string name)
+	{
+		RegisterCompleteObjectUndo (objectsToUndo, name);
+	}
+
+	// Undo/redo performed	
+	CSRAW public delegate void UndoRedoCallback ();
+	CSRAW public static UndoRedoCallback undoRedoPerformed;
+
+
+	CUSTOM static void FlushUndoRecordObjects ()
+	{
+		GetPropertyDiffUndoRecorder ().Flush ();
+	}
+
+	CSRAW public delegate UndoPropertyModification[] PostprocessModifications (UndoPropertyModification[] modifications);
+
+	CSRAW public static PostprocessModifications postprocessModifications;
+
+	CSRAW private static UndoPropertyModification[] InvokePostprocessModifications (UndoPropertyModification[] modifications)
+	{
+		if (postprocessModifications != null)
+			return postprocessModifications (modifications);
+		else
+			return modifications;
+	}
+
+	CSRAW private static void Internal_CallUndoRedoPerformed ()
+	{
+		if (undoRedoPerformed != null)
+			undoRedoPerformed ();
+	}
+
+	OBSOLETE warning Use Undo.RecordObject instead
+	CSRAW public static void SetSnapshotTarget (Object objectToUndo, string name) {}
+	OBSOLETE warning Use Undo.RecordObject instead
+	CSRAW public static void SetSnapshotTarget (Object[] objectsToUndo, string name) {}
+	OBSOLETE warning Use Undo.RecordObject instead
+	CSRAW public static void ClearSnapshotTarget () {}
+	OBSOLETE warning Use Undo.RecordObject instead
+	CSRAW public static void CreateSnapshot (){}
+	OBSOLETE warning Use Undo.RecordObject instead
+	CSRAW public static void RestoreSnapshot () {}
+	OBSOLETE warning Use Undo.RecordObject instead
+	CSRAW public static void RegisterSnapshot () {}
+	OBSOLETE warning Use DestroyObjectImmediate, RegisterCreatedObjectUndo or RegisterUndo instead.
+	CSRAW public static void RegisterSceneUndo (string name) { }
+
+END
+
+
+C++RAW
+
+STRUCT UndoPropertyModification
+	CSRAW public PropertyModification propertyModification;
+	CSRAW private int                 m_KeepPrefabOverride;
+	
+	CSRAW public bool keepPrefabOverride { get { return m_KeepPrefabOverride != 0; } set { m_KeepPrefabOverride = value ? 1 : 0; } }
+END
+
+C++RAW struct MonoUndoPropertyModification
+{
+	ScriptingObjectPtr	modification;
+	int					keepPrefabOverride;
+};
+
+void UndoPropertyModificationToMono (const UndoPropertyModification &src, MonoUndoPropertyModification &dest)
+{
+	MonoPropertyModification mod;
+	PropertyModificationToMono (src.modification, mod);
+	dest.modification = CreateScriptingObjectFromNativeStruct(MONO_COMMON.propertyModification, mod);
+	dest.keepPrefabOverride = src.keepPrefabOverride;
+}
+
+void MonoToUndoPropertyModification (const MonoUndoPropertyModification &src, UndoPropertyModification &dest)
+{
+	MonoToPropertyModification (src.modification, dest.modification);
+	dest.keepPrefabOverride = src.keepPrefabOverride;
+}
+
+static void PostprocessModifications (UndoPropertyModifications& propertyModifications)
+{
+	// Generate C# modifications array
+	ScriptingArrayPtr managedModifications = VectorToScriptingStructArray<UndoPropertyModification, MonoUndoPropertyModification> (propertyModifications, MONO_COMMON.undoPropertyModification, UndoPropertyModificationToMono);
+
+	// Invoke
+	ScriptingInvocation invoke ("UnityEditor", "Undo", "InvokePostprocessModifications");
+	invoke.AddArray(managedModifications);
+	ScriptingArrayPtr output = (ScriptingArrayPtr)invoke.InvokeChecked();
+
+	// Apply changes to propertyModifications
+	if (output != managedModifications)
+		ScriptingStructArrayToVector<UndoPropertyModification, MonoUndoPropertyModification> (output, propertyModifications, MonoToUndoPropertyModification);
+}
+
+static void RegisterCallbacks ()
+{
+	GetPropertyDiffUndoRecorder ().RegisterPostprocessCallback (PostprocessModifications);
+}
+
+static RegisterRuntimeInitializeAndCleanup gRegisterCallbacks (RegisterCallbacks, NULL, 1);
+
+OBSOLETE warning Use Undo.RecordObject before modifying the object instead
+CLASS UndoSnapshot
+	CSRAW public UndoSnapshot (Object[] objectsToUndo) { }
+
+	CSRAW public void Restore () { }
+
+	CSRAW public void Dispose() { }
+END
+
+
+C++RAW
+#undef GET
+
+CSRAW }

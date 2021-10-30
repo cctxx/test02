@@ -1,0 +1,80 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+
+CSRAW
+using System;
+using UnityEngine;
+
+namespace UnityEditor
+{
+NONSEALED_CLASS abstract CallbackOrderAttribute : Attribute
+	//* undocumented
+	CSRAW protected int m_CallbackOrder;
+	//* undocumented
+	CSRAW internal int callbackOrder { get {return m_CallbackOrder; } }
+END
+
+OBSOLETE warning PostProcessAttribute has been renamed to CallbackOrderAttribute.
+NONSEALED_CLASS abstract PostProcessAttribute : CallbackOrderAttribute
+	
+	OBSOLETE warning PostProcessAttribute has been renamed. Use m_CallbackOrder of CallbackOrderAttribute.
+	CSRAW protected int m_PostprocessOrder;
+	
+	OBSOLETE warning PostProcessAttribute has been renamed. Use callbackOrder of CallbackOrderAttribute.
+	CSRAW internal int GetPostprocessOrder { get {return m_PostprocessOrder; } }
+END
+
+namespace Callbacks
+{
+
+	// Add this attribute to a static method to get a notification just after building the player.
+	CLASS PostProcessBuildAttribute : CallbackOrderAttribute
+		CSRAW public PostProcessBuildAttribute () { m_CallbackOrder = 1; }
+		CSRAW public PostProcessBuildAttribute (int callbackOrder) { m_CallbackOrder = callbackOrder; }
+	END
+			
+	// Add this attribute to a static method to get a notification just before building the scene.
+	CLASS PostProcessSceneAttribute : CallbackOrderAttribute
+		// Add this attribute to a static method to get a notification just before building the scene (default order).
+		CSRAW public PostProcessSceneAttribute () { m_CallbackOrder = 1; }
+
+		// Add this attribute to a static method to get a notification just before building the scene with order.
+		CSRAW public PostProcessSceneAttribute (int callbackOrder) { m_CallbackOrder = callbackOrder; }
+	END
+			
+	// Add this attribute to a static method to get a notification after scripts have been reloaded.
+	CLASS DidReloadScripts : CallbackOrderAttribute
+
+		/// Add this attribute to a static method to get a notification after reloading scripts. (default order)
+		CSRAW public DidReloadScripts () { m_CallbackOrder = 1; }
+		
+		/// Add this attribute to a static method to get a notification after reloading a script.
+		///
+		/// You can sort in which order it is executed.
+		/// Smaller priorities will be imported first.
+		/// Unity's own postprocessing will have order 0
+		CSRAW public DidReloadScripts (int callbackOrder) { m_CallbackOrder = callbackOrder; }
+
+	END
+
+	// Add this attribute to a static method to get a callback for opening an asset inside Unity before trying to open it with an external tool
+	CLASS OnOpenAssetAttribute : CallbackOrderAttribute
+		CSRAW public OnOpenAssetAttribute () { m_CallbackOrder = 1; }
+		CSRAW public OnOpenAssetAttribute (int callbackOrder) { m_CallbackOrder = callbackOrder; }
+	END
+}
+
+//* undocumented
+NONSEALED_CLASS internal Empty
+	//* undocumented
+	// Used to compare method signature
+	CSRAW internal static void OnPostprocessBuild(BuildTarget target, string pathToBuiltProject) {}
+	CSRAW internal static bool OnOpenAsset(int instanceID, int line) {return false;}
+END
+
+
+CSRAW
+
+}

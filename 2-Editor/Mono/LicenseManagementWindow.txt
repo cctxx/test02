@@ -1,0 +1,38 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Editor/Src/LicenseInfo.h"
+#include "Runtime/Scripting/ScriptingUtility.h"
+
+CSRAW
+
+using UnityEngine;
+
+namespace UnityEditor {
+
+CLASS internal LicenseManagementWindow : EditorWindow
+
+	CUSTOM public static void CheckForUpdates()
+	{
+		LicenseInfo::Get()->QueryLicenseUpdate(true);
+	}
+	
+	CUSTOM public static void ActivateNewLicense()
+	{
+		LicenseInfo::Get()->NewActivation();
+	}
+	
+	CUSTOM public static void ManualActivation()
+	{
+		LicenseInfo::Get()->ManualActivation();
+	}
+
+	CUSTOM public static void ReturnLicense()
+	{
+		LicenseInfo::Get()->ReturnLicense();
+	}
+
+
+END
+
+CSRAW }
